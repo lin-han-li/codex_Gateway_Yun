@@ -1,0 +1,33 @@
+# Replace gateway.example.com with your real public domain.
+# Caddy will provision HTTPS automatically when the domain resolves here.
+gateway.example.com {
+    encode zstd gzip
+
+    # Keep common security headers at the edge because the app itself speaks plain HTTP.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # Forward everything to the Bun service on localhost.
+    reverse_proxy 127.0.0.1:4777 {
+        # SSE/event streams work better when the proxy flushes immediately.
+        flush_interval -1
+
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-For {remote_host}
+
+        transport http {
+            read_timeout 0
+            write_timeout 0
+            dial_timeout 10s
+            response_header_timeout 30s
+        }
+    }
+
+}

@@ -1,0 +1,37 @@
+[Unit]
+Description=Codex Gateway
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=codex-gateway
+Group=codex-gateway
+WorkingDirectory=/opt/codex-gateway/server-runtime-bundle
+EnvironmentFile=/opt/codex-gateway/server-runtime-bundle/.env
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/codex-gateway/server-runtime-bundle/start.sh
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectClock=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+ReadWritePaths=/opt/codex-gateway/server-runtime-bundle/data
+ReadOnlyPaths=/opt/codex-gateway/server-runtime-bundle
+
+[Install]
+WantedBy=multi-user.target
