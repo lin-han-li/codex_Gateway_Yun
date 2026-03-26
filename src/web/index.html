@@ -3818,7 +3818,19 @@
           `启动上下文: origin=${window.location.origin} queryAdminToken=${queryAdminToken ? "present" : "missing"} storedAdminToken=${storedAdminTokenBeforeBoot ? "present" : "missing"} activeAdminToken=${S.adminToken ? "present" : "missing"}`,
         );
         await checkHealth();
-        await Promise.all([loadProviders(), loadAccounts(), loadModels(), loadBootstrapLogs(), loadSettings()]);
+        await Promise.all([
+          loadProviders(),
+          loadAccounts(),
+          loadModels(),
+          loadBootstrapLogs(),
+          loadSettings().catch((error) => {
+            const msg = error instanceof Error ? error.message : String(error);
+            log(`读取设置失败，已使用降级信息继续初始化: ${msg}`, "warn");
+            S.settings.managementAuthEnabled = Boolean(S.adminToken);
+            S.settings.restartRequired = true;
+            applySettingsToUI();
+          }),
+        ]);
         void loadAccounts({ refreshQuota: true, forceQuota: true }).catch((error) => {
           const msg = error instanceof Error ? error.message : String(error);
           log(`额度后台刷新失败: ${msg}`, "warn");

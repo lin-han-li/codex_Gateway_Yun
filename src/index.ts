@@ -314,6 +314,13 @@ type RuntimeSettings = {
   upstreamPrivacyStrict: boolean
 }
 
+type ServiceAddressInfo = {
+  bindServiceAddress: string
+  activeLocalServiceAddress: string
+  lanServiceAddresses: string[]
+  preferredClientServiceAddress: string
+}
+
 function parseIPv4(host: string) {
   if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return null
   const octets = host.split(".").map((part) => Number(part))
@@ -377,17 +384,51 @@ function formatServiceAddress(host: string, port: number) {
   return `http://${host}:${port}`
 }
 
-function buildServiceAddressInfo(host: string, port: number) {
-  const bindServiceAddress = formatServiceAddress(host, port)
-  const activeLocalServiceAddress = host === "0.0.0.0" ? formatServiceAddress("127.0.0.1", port) : bindServiceAddress
-  const lanHosts = host === "0.0.0.0" ? collectLanIPv4Addresses() : isPrivateLanIPv4(host) ? [host] : []
-  const lanServiceAddresses = lanHosts.map((lanHost) => formatServiceAddress(lanHost, port))
-  const preferredClientServiceAddress = lanServiceAddresses[0] || activeLocalServiceAddress
+function buildFallbackServiceAddressInfo(host: string, port: number): ServiceAddressInfo {
+  const normalizedHost = String(host ?? "").trim() || "127.0.0.1"
+  const normalizedPort = Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 4777
+  const bindServiceAddress = formatServiceAddress(normalizedHost, normalizedPort)
+  const activeLocalServiceAddress =
+    normalizedHost === "0.0.0.0" ? formatServiceAddress("127.0.0.1", normalizedPort) : bindServiceAddress
   return {
     bindServiceAddress,
     activeLocalServiceAddress,
-    lanServiceAddresses,
-    preferredClientServiceAddress,
+    lanServiceAddresses: [],
+    preferredClientServiceAddress: activeLocalServiceAddress,
+  }
+}
+
+function buildServiceAddressInfo(host: string, port: number): ServiceAddressInfo {
+  const fallback = buildFallbackServiceAddressInfo(host, port)
+  const normalizedHost = String(host ?? "").trim() || "127.0.0.1"
+  const normalizedPort = Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 4777
+  try {
+    const lanHosts =
+      normalizedHost === "0.0.0.0" ? collectLanIPv4Addresses() : isPrivateLanIPv4(normalizedHost) ? [normalizedHost] : []
+    const lanServiceAddresses = lanHosts.map((lanHost) => formatServiceAddress(lanHost, normalizedPort))
+    return {
+      ...fallback,
+      lanServiceAddresses,
+      preferredClientServiceAddress: lanServiceAddresses[0] || fallback.activeLocalServiceAddress,
+    }
+  } catch (error) {
+    console.warn(`[oauth-multi-login] buildServiceAddressInfo failed: ${errorMessage(error)}`)
+    return fallback
+  }
+}
+
+function getSafeServiceAddressInfo(host: string, port: number) {
+  try {
+    return buildServiceAddressInfo(host, port)
+  } catch {
+    const bindServiceAddress = formatServiceAddress(host, port)
+    const activeLocalServiceAddress = host === "0.0.0.0" ? formatServiceAddress("127.0.0.1", port) : bindServiceAddress
+    return {
+      bindServiceAddress,
+      activeLocalServiceAddress,
+      lanServiceAddresses: [],
+      preferredClientServiceAddress: activeLocalServiceAddress,
+    }
   }
 }
 
@@ -4210,7 +4251,7 @@ app.post("/api/events/token", (c) => {
 
 app.get("/api/settings", (c) =>
   {
-    const serviceInfo = buildServiceAddressInfo(AppConfig.host, AppConfig.port)
+    const serviceInfo = getSafeServiceAddressInfo(AppConfig.host, AppConfig.port)
     return c.json({
       settings: {
         localServiceAddress: runtimeSettings.localServiceAddress,
@@ -4252,7 +4293,7 @@ app.post("/api/settings", async (c) => {
     runtimeSettings.encryptionKey = nextEncryptionKey
     runtimeSettings.upstreamPrivacyStrict = nextUpstreamPrivacyStrict
     await saveRuntimeSettings(runtimeSettings)
-    const serviceInfo = buildServiceAddressInfo(AppConfig.host, AppConfig.port)
+    const serviceInfo = getSafeServiceAddressInfo(AppConfig.host, AppConfig.port)
     return c.json({
       success: true,
       settings: {
