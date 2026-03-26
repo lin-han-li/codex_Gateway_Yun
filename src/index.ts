@@ -337,15 +337,38 @@ function isAllowedLocalBindHost(host: string) {
   return isPrivateLanIPv4(host)
 }
 
+type NetworkInterfaceCandidate = {
+  address?: string
+  family?: string | number
+  internal?: boolean
+}
+
+function normalizeNetworkFamily(family?: string | number | null) {
+  if (family === "IPv4" || family === 4) return "IPv4"
+  if (family === "IPv6" || family === 6) return "IPv6"
+  return String(family ?? "")
+}
+
 function collectLanIPv4Addresses() {
   const values = new Set<string>()
-  const interfaces = os.networkInterfaces()
-  for (const entries of Object.values(interfaces)) {
-    for (const entry of entries ?? []) {
-      if (!entry || entry.family !== "IPv4" || entry.internal) continue
-      if (!isPrivateLanIPv4(entry.address)) continue
-      values.add(entry.address)
+  try {
+    const interfaces = os.networkInterfaces() as Record<
+      string,
+      NetworkInterfaceCandidate | NetworkInterfaceCandidate[] | undefined
+    >
+    for (const rawEntries of Object.values(interfaces ?? {})) {
+      const entries = Array.isArray(rawEntries) ? rawEntries : rawEntries ? [rawEntries] : []
+      for (const entry of entries) {
+        if (!entry) continue
+        const family = normalizeNetworkFamily(entry.family)
+        const address = String(entry.address ?? "")
+        if (!address || family !== "IPv4" || entry.internal) continue
+        if (!isPrivateLanIPv4(address)) continue
+        values.add(address)
+      }
     }
+  } catch {
+    return []
   }
   return [...values]
 }
