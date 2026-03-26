@@ -1541,7 +1541,7 @@
             </div>
           </div>
 
-          <form id="authLoginForm" class="auth-form">
+          <form id="authLoginForm" class="auth-form" onsubmit="return false">
             <label class="auth-field">
               <span>用户名</span>
               <input id="loginUsernameInput" class="auth-input" type="text" autocomplete="username" value="admin" placeholder="请输入用户名" />
@@ -1570,7 +1570,7 @@
             <div id="authStatus" class="auth-status">正在检测服务状态...</div>
 
             <div class="auth-actions">
-              <button id="authLoginBtn" class="auth-submit" type="submit">进入后台</button>
+              <button id="authLoginBtn" class="auth-submit" type="submit" disabled>进入后台</button>
               <button id="clearStoredTokenBtn" class="auth-link-btn" type="button">清除本机已保存令牌</button>
             </div>
           </form>
@@ -2357,6 +2357,7 @@
           authForm.addEventListener("submit", handleLoginSubmit);
           authForm.dataset.submitBound = "1";
         }
+        setAuthBusy(false);
         renderAuthShell();
       }
 
