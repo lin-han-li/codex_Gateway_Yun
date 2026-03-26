@@ -50,6 +50,463 @@
         color: inherit;
       }
 
+      body {
+        position: relative;
+      }
+
+      .layout {
+        transition:
+          filter 0.45s ease,
+          transform 0.45s ease,
+          opacity 0.45s ease;
+      }
+
+      .auth-shell {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: grid;
+        place-items: center;
+        padding: clamp(18px, 3vw, 36px);
+        opacity: 1;
+        visibility: visible;
+        transition:
+          opacity 0.35s ease,
+          visibility 0.35s ease;
+      }
+
+      .auth-shell::before,
+      .auth-shell::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        filter: blur(12px);
+        opacity: 0.7;
+        pointer-events: none;
+      }
+
+      .auth-shell::before {
+        width: 260px;
+        height: 260px;
+        top: 8%;
+        left: 6%;
+        background: radial-gradient(circle, rgba(15, 211, 220, 0.36) 0%, rgba(15, 211, 220, 0) 72%);
+      }
+
+      .auth-shell::after {
+        width: 320px;
+        height: 320px;
+        right: 4%;
+        bottom: 8%;
+        background: radial-gradient(circle, rgba(72, 127, 255, 0.28) 0%, rgba(72, 127, 255, 0) 72%);
+      }
+
+      .auth-backdrop {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 18% 18%, rgba(13, 188, 201, 0.16), transparent 26%),
+          radial-gradient(circle at 82% 82%, rgba(69, 123, 255, 0.18), transparent 28%),
+          linear-gradient(135deg, rgba(6, 12, 26, 0.96), rgba(10, 22, 40, 0.9));
+        overflow: hidden;
+      }
+
+      .auth-backdrop::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(114, 214, 255, 0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(114, 214, 255, 0.08) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.95) 14%, rgba(0, 0, 0, 0.95) 86%, transparent 100%);
+      }
+
+      .auth-grid {
+        position: relative;
+        z-index: 1;
+        width: min(1120px, calc(100vw - 36px));
+        min-height: min(720px, calc(100vh - 36px));
+        display: grid;
+        grid-template-columns: minmax(0, 1.12fr) minmax(360px, 420px);
+        gap: clamp(18px, 3vw, 36px);
+        align-items: stretch;
+      }
+
+      .auth-hero {
+        position: relative;
+        padding: clamp(30px, 4vw, 54px);
+        display: grid;
+        align-content: center;
+      }
+
+      .auth-hero::before {
+        content: "";
+        position: absolute;
+        inset: 8% 2% 8% 0;
+        border-radius: 32px;
+        border: 1px solid rgba(146, 222, 255, 0.12);
+        background:
+          linear-gradient(180deg, rgba(18, 29, 49, 0.54), rgba(9, 16, 31, 0.16)),
+          linear-gradient(145deg, rgba(15, 197, 208, 0.08), rgba(74, 126, 255, 0.08));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.06),
+          0 28px 80px rgba(0, 0, 0, 0.25);
+      }
+
+      .auth-hero-inner {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 22px;
+      }
+
+      .auth-kicker {
+        width: fit-content;
+        padding: 8px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(117, 217, 255, 0.2);
+        background: rgba(17, 27, 47, 0.42);
+        color: #8fe8ff;
+        font-size: 12px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+      }
+
+      .auth-title {
+        margin: 0;
+        font-size: clamp(40px, 7vw, 72px);
+        line-height: 0.94;
+        letter-spacing: -0.04em;
+      }
+
+      .auth-title span {
+        display: block;
+        background: linear-gradient(135deg, #f7fbff 8%, #baf3ff 48%, #7ba8ff 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .auth-description {
+        max-width: 560px;
+        color: rgba(227, 235, 248, 0.8);
+        font-size: 16px;
+      }
+
+      .auth-feature-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        max-width: 620px;
+      }
+
+      .auth-feature {
+        padding: 16px 18px;
+        border-radius: 18px;
+        border: 1px solid rgba(136, 219, 255, 0.12);
+        background: rgba(13, 22, 38, 0.46);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      }
+
+      .auth-feature strong,
+      .auth-meta-card strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 15px;
+        color: #f5fbff;
+      }
+
+      .auth-feature span,
+      .auth-meta-card span {
+        color: rgba(217, 227, 242, 0.72);
+        font-size: 13px;
+      }
+
+      .auth-meta-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .auth-meta-card {
+        padding: 16px 18px;
+        border-radius: 18px;
+        border: 1px solid rgba(136, 219, 255, 0.12);
+        background: rgba(10, 18, 31, 0.54);
+      }
+
+      .auth-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .auth-tags span {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: rgba(240, 246, 255, 0.82);
+        font-size: 13px;
+      }
+
+      .auth-card {
+        position: relative;
+        z-index: 1;
+        align-self: center;
+        padding: clamp(26px, 3.2vw, 34px);
+        border-radius: 30px;
+        border: 1px solid rgba(146, 222, 255, 0.16);
+        background: rgba(12, 18, 31, 0.68);
+        backdrop-filter: blur(20px);
+        box-shadow:
+          0 30px 80px rgba(0, 0, 0, 0.48),
+          inset 0 1px 0 rgba(255, 255, 255, 0.07);
+        overflow: hidden;
+      }
+
+      .auth-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(145deg, rgba(20, 140, 144, 0.12), transparent 36%, rgba(76, 115, 255, 0.12));
+        pointer-events: none;
+      }
+
+      .auth-card-head,
+      .auth-form,
+      .auth-footnote,
+      .auth-footer {
+        position: relative;
+        z-index: 1;
+      }
+
+      .auth-card-head {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 22px;
+      }
+
+      .auth-logo {
+        width: 64px;
+        height: 64px;
+        border-radius: 20px;
+        display: grid;
+        place-items: center;
+        color: #f5fbff;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        background:
+          linear-gradient(135deg, rgba(19, 184, 191, 0.94), rgba(76, 115, 255, 0.88)),
+          rgba(255, 255, 255, 0.08);
+        box-shadow:
+          0 18px 36px rgba(21, 122, 153, 0.32),
+          inset 0 1px 0 rgba(255, 255, 255, 0.18);
+      }
+
+      .auth-card-head h2 {
+        margin: 4px 0 6px;
+        font-size: 30px;
+        line-height: 1.02;
+      }
+
+      .auth-card-head p {
+        margin: 0;
+        color: rgba(221, 232, 244, 0.74);
+        font-size: 14px;
+      }
+
+      .auth-form {
+        display: grid;
+        gap: 16px;
+      }
+
+      .auth-field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .auth-field span {
+        font-size: 13px;
+        color: rgba(213, 226, 241, 0.82);
+      }
+
+      .auth-input,
+      .auth-secret-row input {
+        width: 100%;
+        min-height: 54px;
+        border-radius: 16px;
+        border: 1px solid rgba(142, 216, 255, 0.18);
+        background: rgba(8, 15, 28, 0.78);
+        padding: 14px 16px;
+        outline: none;
+        transition:
+          border-color 0.2s ease,
+          box-shadow 0.2s ease,
+          transform 0.2s ease;
+      }
+
+      .auth-input:focus,
+      .auth-secret-row input:focus {
+        border-color: rgba(126, 226, 255, 0.56);
+        box-shadow: 0 0 0 4px rgba(67, 189, 255, 0.14);
+      }
+
+      .auth-secret-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .auth-ghost-btn {
+        min-height: 52px;
+        border: 1px solid rgba(142, 216, 255, 0.16);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(232, 240, 248, 0.88);
+        padding: 0 16px;
+        cursor: pointer;
+      }
+
+      .auth-ghost-btn:hover {
+        background: rgba(255, 255, 255, 0.09);
+      }
+
+      .auth-check {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        color: rgba(214, 226, 241, 0.76);
+      }
+
+      .auth-check input {
+        width: 16px;
+        height: 16px;
+      }
+
+      .auth-error,
+      .auth-status {
+        padding: 12px 14px;
+        border-radius: 14px;
+        font-size: 13px;
+      }
+
+      .auth-error {
+        border: 1px solid rgba(244, 100, 122, 0.34);
+        background: rgba(112, 27, 48, 0.38);
+        color: #ffd8dd;
+      }
+
+      .auth-status {
+        border: 1px solid rgba(122, 213, 255, 0.14);
+        background: rgba(15, 28, 51, 0.52);
+        color: rgba(224, 235, 246, 0.74);
+      }
+
+      .auth-actions {
+        display: grid;
+        gap: 12px;
+      }
+
+      .auth-submit {
+        min-height: 54px;
+        border: none;
+        border-radius: 18px;
+        padding: 0 18px;
+        background: linear-gradient(135deg, #13b8bf 0%, #4f71ff 100%);
+        color: #f7fbff;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        box-shadow: 0 20px 36px rgba(28, 102, 162, 0.28);
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease,
+          filter 0.2s ease;
+      }
+
+      .auth-submit:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 24px 42px rgba(28, 102, 162, 0.34);
+        filter: brightness(1.05);
+      }
+
+      .auth-submit:disabled,
+      .auth-ghost-btn:disabled,
+      .side-link:disabled {
+        opacity: 0.6;
+        cursor: wait;
+        transform: none;
+      }
+
+      .auth-link-btn {
+        border: none;
+        background: transparent;
+        color: #98e9ff;
+        padding: 0;
+        cursor: pointer;
+        font-size: 13px;
+        justify-self: start;
+      }
+
+      .auth-link-btn:hover {
+        color: #b6f1ff;
+      }
+
+      .auth-footnote {
+        margin-top: 18px;
+        color: rgba(204, 219, 237, 0.62);
+        font-size: 12px;
+        line-height: 1.7;
+      }
+
+      .auth-footer {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: rgba(200, 214, 233, 0.68);
+        font-size: 12px;
+      }
+
+      .auth-footer strong {
+        display: block;
+        margin-top: 4px;
+        color: #f5fbff;
+        font-size: 13px;
+      }
+
+      body.auth-ready .auth-shell {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      body.auth-ready .layout {
+        filter: none;
+        transform: none;
+        opacity: 1;
+        pointer-events: auto;
+        user-select: auto;
+      }
+
+      body.auth-loading .layout,
+      body.auth-locked .layout {
+        filter: blur(22px) saturate(0.7);
+        transform: scale(0.985);
+        opacity: 0.22;
+        pointer-events: none;
+        user-select: none;
+      }
+
       .layout {
         height: 100vh;
         min-height: 100vh;
@@ -124,7 +581,14 @@
         font-size: var(--fs-sm);
         display: flex;
         align-items: center;
-        gap: 6px;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .side-foot-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
 
       .dot {
@@ -132,6 +596,18 @@
         height: 9px;
         border-radius: 50%;
         background: var(--ok);
+      }
+
+      .side-link {
+        border: none;
+        background: transparent;
+        color: var(--dim);
+        cursor: pointer;
+        padding: 0;
+      }
+
+      .side-link:hover {
+        color: var(--text);
       }
 
       .main {
@@ -913,6 +1389,26 @@
         table {
           min-width: 560px;
         }
+
+        .auth-grid {
+          width: min(100%, 920px);
+          min-height: auto;
+          grid-template-columns: 1fr;
+        }
+
+        .auth-hero {
+          padding: 26px 22px 0;
+        }
+
+        .auth-hero::before {
+          inset: 0;
+        }
+
+        .auth-card {
+          max-width: 640px;
+          width: 100%;
+          margin: 0 auto;
+        }
       }
 
       @media (max-width: 640px) {
@@ -935,10 +1431,169 @@
         table {
           min-width: 480px;
         }
+
+        .auth-shell {
+          padding: 12px;
+        }
+
+        .auth-grid {
+          width: 100%;
+          gap: 14px;
+        }
+
+        .auth-hero {
+          padding: 14px 4px 0;
+        }
+
+        .auth-title {
+          font-size: 38px;
+        }
+
+        .auth-feature-grid,
+        .auth-meta-row {
+          grid-template-columns: 1fr;
+        }
+
+        .auth-card {
+          padding: 22px 18px;
+          border-radius: 24px;
+        }
+
+        .auth-card-head {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .auth-card-head h2 {
+          font-size: 26px;
+        }
+
+        .auth-secret-row {
+          grid-template-columns: 1fr;
+        }
+
+        .auth-submit,
+        .auth-ghost-btn {
+          width: 100%;
+        }
+
+        .auth-footer {
+          flex-direction: column;
+        }
       }
     </style>
   </head>
-  <body>
+  <body class="auth-loading">
+    <div id="authShell" class="auth-shell" aria-hidden="false">
+      <div class="auth-backdrop"></div>
+      <div class="auth-grid">
+        <section class="auth-hero">
+          <div class="auth-hero-inner">
+            <div class="auth-kicker">Secure Gateway Control</div>
+            <h1 class="auth-title"><span>Codex</span><span>Gateway</span></h1>
+            <div class="auth-description">
+              集中管理 OAuth 账号、虚拟 Key、JSON 导入与系统日志。登录后即可进入完整的网关控制台。
+            </div>
+            <div class="auth-feature-grid">
+              <div class="auth-feature">
+                <strong>多账号管理</strong>
+                <span>统一维护 OAuth 账号、API Key 和授权会话。</span>
+              </div>
+              <div class="auth-feature">
+                <strong>虚拟 Key 分发</strong>
+                <span>快速签发、续期和吊销客户端访问密钥。</span>
+              </div>
+              <div class="auth-feature">
+                <strong>JSON 导入</strong>
+                <span>支持批量导入账号数据，适合远程运维场景。</span>
+              </div>
+              <div class="auth-feature">
+                <strong>系统观测</strong>
+                <span>实时查看服务状态、启动日志和用量信息。</span>
+              </div>
+            </div>
+            <div class="auth-meta-row">
+              <div class="auth-meta-card">
+                <strong id="authServiceState">检测中...</strong>
+                <span>网关服务状态</span>
+              </div>
+              <div class="auth-meta-card">
+                <strong id="authGuardState">检测中...</strong>
+                <span>管理保护状态</span>
+              </div>
+            </div>
+            <div class="auth-tags">
+              <span>JSON 批量导入</span>
+              <span>OAuth 管理</span>
+              <span>虚拟 Key</span>
+              <span>系统日志</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="auth-card">
+          <div class="auth-card-head">
+            <div class="auth-logo">CG</div>
+            <div>
+              <div class="auth-kicker">Administrator Access</div>
+              <h2>登录网关后台</h2>
+              <p>使用管理员账号进入 Codex Gateway 控制台。</p>
+            </div>
+          </div>
+
+          <form id="authLoginForm" class="auth-form">
+            <label class="auth-field">
+              <span>用户名</span>
+              <input id="loginUsernameInput" class="auth-input" type="text" autocomplete="username" value="admin" placeholder="请输入用户名" />
+            </label>
+
+            <label class="auth-field">
+              <span>密码</span>
+              <div class="auth-secret-row">
+                <input
+                  id="loginPasswordInput"
+                  class="auth-input"
+                  type="password"
+                  autocomplete="current-password"
+                  placeholder="请输入管理员密码"
+                />
+                <button id="toggleLoginPassword" class="auth-ghost-btn" type="button">显示密码</button>
+              </div>
+            </label>
+
+            <label class="auth-check">
+              <input id="rememberLoginInput" type="checkbox" checked />
+              <span>记住本机登录令牌</span>
+            </label>
+
+            <div id="authError" class="auth-error" hidden></div>
+            <div id="authStatus" class="auth-status">正在检测服务状态...</div>
+
+            <div class="auth-actions">
+              <button id="authLoginBtn" class="auth-submit" type="submit">进入后台</button>
+              <button id="clearStoredTokenBtn" class="auth-link-btn" type="button">清除本机已保存令牌</button>
+            </div>
+          </form>
+
+          <div class="auth-footnote">
+            当前访问地址：<strong id="authOriginText">-</strong><br />
+            远程网页适合做账号维护、JSON 导入、密钥管理和系统巡检。
+          </div>
+
+          <div class="auth-footer">
+            <div>
+              当前登录账号
+              <strong id="authUsernameHint">admin</strong>
+            </div>
+            <div>
+              客户端状态
+              <strong id="authTokenHint">未保存令牌</strong>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
     <div class="layout">
       <aside class="sidebar">
         <div class="brand">
@@ -1306,6 +1961,9 @@
         return isDesktopFlagged() || /\bElectron\//i.test(String(navigator.userAgent || ""));
       }
 
+      const LOGIN_IDENTITY_LABEL = "管理令牌会话";
+      let appLifecycleBound = false;
+
       const log = (message, level = "info") => {
         S.logs.unshift({ id: makeId(), at: Date.now(), message, level });
         S.logs = S.logs.slice(0, 240);
@@ -1348,15 +2006,19 @@
         }
       }
 
-      function saveAdminTokenToStorage(value) {
+      function setClientAdminToken(value, persist = true) {
         const token = String(value || "").trim();
         S.adminToken = token;
         try {
-          if (token) localStorage.setItem("oauth_admin_token", token);
+          if (persist && token) localStorage.setItem("oauth_admin_token", token);
           else localStorage.removeItem("oauth_admin_token");
         } catch {
           // ignore localStorage failures
         }
+      }
+
+      function saveAdminTokenToStorage(value) {
+        setClientAdminToken(value, true);
       }
 
       function loadEncryptionKeyFromStorage() {
@@ -1376,6 +2038,331 @@
         } catch {
           // ignore localStorage failures
         }
+      }
+
+      function setAuthBodyState(state) {
+        document.body.classList.remove("auth-loading", "auth-locked", "auth-ready");
+        document.body.classList.add(`auth-${state}`);
+        const shell = document.getElementById("authShell");
+        if (shell) shell.setAttribute("aria-hidden", state === "ready" ? "true" : "false");
+      }
+
+      function setAuthStatus(message) {
+        const el = document.getElementById("authStatus");
+        if (el) el.textContent = String(message || "").trim();
+      }
+
+      function setAuthError(message = "") {
+        const el = document.getElementById("authError");
+        if (!el) return;
+        const text = String(message || "").trim();
+        el.hidden = !text;
+        el.textContent = text;
+      }
+
+      function setAuthBusy(busy) {
+        const submit = document.getElementById("authLoginBtn");
+        const clear = document.getElementById("clearStoredTokenBtn");
+        const toggle = document.getElementById("toggleLoginPassword");
+        if (submit) {
+          submit.disabled = Boolean(busy);
+          submit.textContent = busy ? "验证中..." : S.settings.managementAuthEnabled ? "验证并进入" : "进入控制台";
+        }
+        if (clear) clear.disabled = Boolean(busy);
+        if (toggle) toggle.disabled = Boolean(busy);
+      }
+
+      function rememberLoginEnabled() {
+        const input = document.getElementById("rememberLoginInput");
+        return input ? Boolean(input.checked) : true;
+      }
+
+      function persistLoginToken(value, remember = true) {
+        const token = String(value || "").trim();
+        S.adminToken = token;
+        try {
+          if (remember && token) localStorage.setItem("oauth_admin_token", token);
+          else localStorage.removeItem("oauth_admin_token");
+        } catch {
+          // ignore localStorage failures
+        }
+      }
+
+      function clearStoredLoginToken() {
+        persistLoginToken("", false);
+        const input = document.getElementById("loginPasswordInput");
+        if (input) input.value = "";
+        setAuthError("");
+        setAuthStatus("本机已保存的管理令牌已清除。");
+        syncAuthSurface();
+      }
+
+      function ensureSidebarSessionControl() {
+        const foot = document.querySelector(".side-foot");
+        if (!foot || document.getElementById("lockSessionBtn")) return;
+        foot.innerHTML =
+          '<div class="side-foot-actions"><span class="dot"></span><span>就绪</span></div><button id="lockSessionBtn" class="side-link" type="button" hidden>退出登录</button>';
+      }
+
+      function configureAuthCopy() {
+        const title = document.querySelector(".auth-card-head h2");
+        if (title) title.textContent = "进入网关后台";
+        const subtitle = document.querySelector(".auth-card-head p");
+        if (subtitle) subtitle.textContent = "使用当前服务器配置的管理令牌进入 Codex Gateway 控制台。";
+        const usernameField = document.getElementById("loginUsernameInput")?.closest(".auth-field");
+        if (usernameField) usernameField.hidden = true;
+        const passwordField = document.getElementById("loginPasswordInput")?.closest(".auth-field");
+        const passwordLabel = passwordField?.querySelector("span");
+        if (passwordLabel) passwordLabel.textContent = "管理令牌";
+        const passwordInput = document.getElementById("loginPasswordInput");
+        if (passwordInput) passwordInput.placeholder = "请输入 x-admin-token 对应的管理令牌";
+        const toggle = document.getElementById("toggleLoginPassword");
+        if (toggle) toggle.textContent = passwordInput?.type === "text" ? "隐藏令牌" : "显示令牌";
+        const rememberLabel = document.getElementById("rememberLoginInput")?.closest(".auth-check")?.querySelector("span");
+        if (rememberLabel) rememberLabel.textContent = "记住本机登录令牌";
+        const clear = document.getElementById("clearStoredTokenBtn");
+        if (clear) clear.textContent = "清除本机已保存令牌";
+        const footnote = document.querySelector(".auth-footnote");
+        if (footnote) {
+          footnote.innerHTML =
+            '当前访问地址：<strong id="authOriginText">-</strong><br />远程网页适合做账号维护、JSON 导入、密钥管理和系统巡检。';
+        }
+        const footer = document.querySelector(".auth-footer");
+        if (footer) {
+          footer.innerHTML =
+            '<div>当前访问模式<strong id="authUsernameHint">管理令牌会话</strong></div><div>客户端状态<strong id="authTokenHint">未保存令牌</strong></div>';
+        }
+      }
+
+      function syncAuthSurface() {
+        configureAuthCopy();
+        const origin = document.getElementById("authOriginText");
+        if (origin) origin.textContent = window.location.origin;
+        const serviceState = document.getElementById("authServiceState");
+        if (serviceState) serviceState.textContent = S.service ? "在线 / Ready" : "离线 / Offline";
+        const guardState = document.getElementById("authGuardState");
+        if (guardState) guardState.textContent = S.settings.managementAuthEnabled ? "已启用" : "未启用";
+        const authMode = document.getElementById("authUsernameHint");
+        if (authMode) authMode.textContent = S.settings.managementAuthEnabled ? LOGIN_IDENTITY_LABEL : "开放访问";
+        const tokenHint = document.getElementById("authTokenHint");
+        if (tokenHint) tokenHint.textContent = S.adminToken ? "已保存令牌" : "未保存令牌";
+        const rememberWrap = document.getElementById("rememberLoginInput")?.closest(".auth-check");
+        if (rememberWrap) rememberWrap.hidden = !S.settings.managementAuthEnabled;
+        const clear = document.getElementById("clearStoredTokenBtn");
+        if (clear) clear.hidden = !S.settings.managementAuthEnabled && !S.adminToken;
+        const authField = document.getElementById("loginPasswordInput")?.closest(".auth-field");
+        if (authField) authField.hidden = !S.settings.managementAuthEnabled;
+        setAuthBusy(false);
+        const submit = document.getElementById("authLoginBtn");
+        if (submit) submit.textContent = S.settings.managementAuthEnabled ? "验证并进入" : "进入控制台";
+        const logout = document.getElementById("lockSessionBtn");
+        if (logout) logout.hidden = !(S.settings.managementAuthEnabled && S.adminToken);
+      }
+
+      function isUnauthorizedManagementError(error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return /Unauthorized management token|401/.test(msg);
+      }
+
+      function toggleLoginTokenVisibility() {
+        const input = document.getElementById("loginPasswordInput");
+        const toggle = document.getElementById("toggleLoginPassword");
+        if (!input || !toggle) return;
+        input.type = input.type === "password" ? "text" : "password";
+        toggle.textContent = input.type === "text" ? "隐藏令牌" : "显示令牌";
+      }
+
+      function focusLoginTokenInput() {
+        const input = document.getElementById("loginPasswordInput");
+        if (!input || input.hidden) return;
+        setTimeout(() => input.focus(), 40);
+      }
+
+      function setAuthMode(mode) {
+        document.body.classList.remove("auth-loading", "auth-locked", "auth-ready");
+        document.body.classList.add(`auth-${mode}`);
+        const shell = document.getElementById("authShell");
+        if (shell) shell.setAttribute("aria-hidden", mode === "ready" ? "true" : "false");
+      }
+
+      function setAuthStatus(message) {
+        const el = document.getElementById("authStatus");
+        if (el) el.textContent = String(message || "").trim() || "请输入管理员凭据后继续。";
+      }
+
+      function setAuthError(message = "") {
+        const el = document.getElementById("authError");
+        if (!el) return;
+        const text = String(message || "").trim();
+        el.hidden = !text;
+        el.textContent = text;
+      }
+
+      function setAuthBusy(isBusy) {
+        const busy = Boolean(isBusy);
+        const submit = document.getElementById("authLoginBtn");
+        if (submit) {
+          submit.disabled = busy;
+          submit.textContent = busy ? "验证中..." : "进入后台";
+        }
+        const user = document.getElementById("loginUsernameInput");
+        if (user) user.disabled = busy;
+        const password = document.getElementById("loginPasswordInput");
+        if (password) password.disabled = busy;
+        const remember = document.getElementById("rememberLoginInput");
+        if (remember) remember.disabled = busy;
+        const toggle = document.getElementById("toggleLoginPassword");
+        if (toggle) toggle.disabled = busy;
+        const clear = document.getElementById("clearStoredTokenBtn");
+        if (clear) clear.disabled = busy;
+      }
+
+      function focusLoginField() {
+        const password = document.getElementById("loginPasswordInput");
+        const username = document.getElementById("loginUsernameInput");
+        if (password && !password.value) {
+          password.focus();
+          return;
+        }
+        if (username) username.focus();
+      }
+
+      function renderAuthShell() {
+        const serviceState = document.getElementById("authServiceState");
+        if (serviceState) serviceState.textContent = S.service ? "服务在线" : "等待服务响应";
+        const guardState = document.getElementById("authGuardState");
+        if (guardState) {
+          guardState.textContent = S.settings.managementAuthEnabled ? "已启用管理保护" : "未启用管理保护";
+        }
+        const originText = document.getElementById("authOriginText");
+        if (originText) originText.textContent = window.location.origin;
+        const usernameHint = document.getElementById("authUsernameHint");
+        if (usernameHint) usernameHint.textContent = LOGIN_USERNAME;
+        const tokenHint = document.getElementById("authTokenHint");
+        if (tokenHint) tokenHint.textContent = S.adminToken ? "已检测到本机令牌" : "未保存令牌";
+      }
+
+      function normalizeErrorMessage(error) {
+        return error instanceof Error ? error.message : String(error || "未知错误");
+      }
+
+      function isUnauthorizedError(error) {
+        const message = normalizeErrorMessage(error);
+        return /Unauthorized management token/i.test(message) || /401/.test(message);
+      }
+
+      function clearClientAuthentication() {
+        S.eventToken = "";
+        S.eventTokenExpiresAt = 0;
+        stopRealtimeUsageRefresh();
+        stopUsageFallbackPolling();
+        stopUsageConsistencySync();
+        setClientAdminToken("", false);
+        renderAuthShell();
+      }
+
+      async function verifyManagementToken(candidateToken) {
+        const token = String(candidateToken || "").trim();
+        const response = await fetch("/api/settings", {
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json",
+            "x-admin-token": token,
+          },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `请求失败: ${response.status}`);
+        return data?.settings || {};
+      }
+
+      async function initializeAuthenticatedApp(options = {}) {
+        const { skipSettings = false } = options;
+        await Promise.all([
+          loadProviders(),
+          loadAccounts(),
+          loadModels(),
+          loadBootstrapLogs(),
+          skipSettings
+            ? Promise.resolve()
+            : loadSettings().catch((error) => {
+                const msg = normalizeErrorMessage(error);
+                log(`读取设置失败，已使用降级信息继续初始化: ${msg}`, "warn");
+                S.settings.managementAuthEnabled = Boolean(S.adminToken);
+                S.settings.restartRequired = true;
+                refreshSettingsUi();
+              }),
+        ]);
+        void loadAccounts({ refreshQuota: true, forceQuota: true }).catch((error) => {
+          const msg = normalizeErrorMessage(error);
+          log(`额度后台刷新失败: ${msg}`, "warn");
+        });
+        void startRealtimeUsageRefresh();
+        startUsageConsistencySync();
+        if (!appLifecycleBound) {
+          window.addEventListener("beforeunload", () => {
+            stopRealtimeUsageRefresh();
+            stopUsageFallbackPolling();
+            stopUsageConsistencySync();
+          });
+          appLifecycleBound = true;
+        }
+        setAuthError("");
+        setAuthStatus("登录成功，正在进入后台...");
+        renderAuthShell();
+        setAuthMode("ready");
+        log("界面初始化完成");
+      }
+
+      async function handleLoginSubmit(event) {
+        event?.preventDefault();
+        const username = String(document.getElementById("loginUsernameInput")?.value || "").trim();
+        const password = String(document.getElementById("loginPasswordInput")?.value || "").trim();
+        const remember = Boolean(document.getElementById("rememberLoginInput")?.checked);
+        if (username !== LOGIN_USERNAME || !password) {
+          setAuthError("用户名或密码错误，请重新输入。");
+          setAuthStatus("请使用管理员账号登录。");
+          focusLoginField();
+          return;
+        }
+
+        setAuthMode("loading");
+        setAuthBusy(true);
+        setAuthError("");
+        setAuthStatus("正在验证管理员凭据...");
+
+        try {
+          const settings = await verifyManagementToken(password);
+          setClientAdminToken(password, remember);
+          hydrateSettingsFromApi(settings);
+          refreshSettingsUi();
+          await initializeAuthenticatedApp({ skipSettings: true });
+        } catch (error) {
+          clearClientAuthentication();
+          const message = isUnauthorizedError(error) ? "用户名或密码错误，请重新输入。" : normalizeErrorMessage(error);
+          setAuthMode("locked");
+          setAuthError(message);
+          setAuthStatus("请重新验证后进入后台。");
+          renderAuthShell();
+          log(`登录失败: ${normalizeErrorMessage(error)}`, "error");
+          focusLoginField();
+        } finally {
+          setAuthBusy(false);
+        }
+      }
+
+      function clearStoredLoginToken() {
+        clearClientAuthentication();
+        const password = document.getElementById("loginPasswordInput");
+        if (password) password.value = "";
+        setAuthMode("locked");
+        setAuthError("");
+        setAuthStatus("已清除本机保存的登录令牌。");
+        focusLoginField();
+      }
+
+      function logoutFromDashboard() {
+        clearClientAuthentication();
+        window.location.reload();
       }
 
       async function api(path, init = {}) {
@@ -3411,11 +4398,16 @@
         }
       }
 
+      function refreshSettingsUi() {
+        applySettingsToUI();
+        renderAuthShell();
+      }
+
       async function loadSettings() {
         const output = await api("/api/settings");
         const settings = output?.settings || {};
         hydrateSettingsFromApi(settings);
-        applySettingsToUI();
+        refreshSettingsUi();
       }
 
       async function saveSettingsLegacy() {
@@ -3443,7 +4435,7 @@
             ? settings.lanServiceAddresses.map((item) => String(item))
             : [];
           S.settings.managementAuthEnabled = Boolean(settings.managementAuthEnabled);
-          applySettingsToUI();
+          refreshSettingsUi();
           const warnings = Array.isArray(output?.warnings)
             ? output.warnings.map((item) => String(item || "").trim()).filter(Boolean)
             : [];
@@ -3502,7 +4494,7 @@
             ? output.warnings.map((item) => String(item || "").trim()).filter(Boolean)
             : [];
           hydrateSettingsFromApi(settings, localServiceAddress);
-          applySettingsToUI();
+          refreshSettingsUi();
           for (const warning of warnings) {
             log(`设置警告: ${warning}`, "warn");
           }
@@ -3529,12 +4521,20 @@
 
       async function checkHealth() {
         try {
-          await api("/api/health");
-          S.service = true;
+          const response = await fetch("/api/health", { cache: "no-store" });
+          const output = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(output.error || `服务探测失败: ${response.status}`);
+          S.service = Boolean(output?.ok);
+          S.settings.managementAuthEnabled = Boolean(output?.managementAuthEnabled);
+          drawStats();
+          renderAuthShell();
+          return output;
         } catch {
           S.service = false;
+          renderAuthShell();
+          drawStats();
+          return null;
         }
-        drawStats();
       }
 
       async function quickStartOauth() {
@@ -3690,12 +4690,40 @@
       }
 
       function bindStatic() {
+        const sideFoot = document.querySelector(".side-foot");
+        if (sideFoot && !sideFoot.querySelector(".side-foot-actions")) {
+          const wrapper = document.createElement("div");
+          wrapper.className = "side-foot-actions";
+          while (sideFoot.firstChild) {
+            wrapper.appendChild(sideFoot.firstChild);
+          }
+          sideFoot.appendChild(wrapper);
+        }
+        if (sideFoot && !document.getElementById("logoutBtn")) {
+          const button = document.createElement("button");
+          button.id = "logoutBtn";
+          button.className = "side-link";
+          button.type = "button";
+          button.textContent = "退出登录";
+          sideFoot.appendChild(button);
+        }
+
         const setClick = (id, handler) => {
           const el = document.getElementById(id);
           if (el) el.onclick = handler;
         };
 
         document.querySelectorAll("[data-view]").forEach((btn) => (btn.onclick = () => switchView(btn.dataset.view)));
+        setClick("logoutBtn", logoutFromDashboard);
+        setClick("clearStoredTokenBtn", clearStoredLoginToken);
+        setClick("toggleLoginPassword", () => {
+          const input = document.getElementById("loginPasswordInput");
+          const button = document.getElementById("toggleLoginPassword");
+          if (!input || !button) return;
+          const nextType = input.type === "password" ? "text" : "password";
+          input.type = nextType;
+          button.textContent = nextType === "password" ? "显示密码" : "隐藏密码";
+        });
         setClick("goAcc", quickStartOauth);
         setClick("goKeys", () => switchView("keys"));
         setClick("btnAddOauth", quickStartOauth);
@@ -3791,9 +4819,12 @@
           }
         });
         document.getElementById("accountJsonImportInput")?.addEventListener("change", handleJsonAccountImport);
+        const authForm = document.getElementById("authLoginForm");
+        if (authForm) authForm.onsubmit = handleLoginSubmit;
 
         const origin = document.getElementById("origin");
         if (origin) origin.textContent = window.location.origin;
+        renderAuthShell();
       }
 
       async function boot() {
@@ -3814,35 +4845,46 @@
         drawKeysTable();
         fillKeyAccountSelector();
         drawTestChatLog();
+        renderAuthShell();
         log(
           `启动上下文: origin=${window.location.origin} queryAdminToken=${queryAdminToken ? "present" : "missing"} storedAdminToken=${storedAdminTokenBeforeBoot ? "present" : "missing"} activeAdminToken=${S.adminToken ? "present" : "missing"}`,
         );
-        await checkHealth();
-        await Promise.all([
-          loadProviders(),
-          loadAccounts(),
-          loadModels(),
-          loadBootstrapLogs(),
-          loadSettings().catch((error) => {
-            const msg = error instanceof Error ? error.message : String(error);
-            log(`读取设置失败，已使用降级信息继续初始化: ${msg}`, "warn");
-            S.settings.managementAuthEnabled = Boolean(S.adminToken);
-            S.settings.restartRequired = true;
-            applySettingsToUI();
-          }),
-        ]);
-        void loadAccounts({ refreshQuota: true, forceQuota: true }).catch((error) => {
-          const msg = error instanceof Error ? error.message : String(error);
-          log(`额度后台刷新失败: ${msg}`, "warn");
-        });
-        void startRealtimeUsageRefresh();
-        startUsageConsistencySync();
-        window.addEventListener("beforeunload", () => {
-          stopRealtimeUsageRefresh();
-          stopUsageFallbackPolling();
-          stopUsageConsistencySync();
-        });
-        log("界面初始化完成");
+        const health = await checkHealth();
+        if (!health) {
+          setAuthMode("locked");
+          setAuthError("无法连接网关服务，请确认服务器状态。");
+          setAuthStatus("服务暂时不可用，恢复后再尝试登录。");
+          focusLoginField();
+          return;
+        }
+
+        if (!S.settings.managementAuthEnabled) {
+          await initializeAuthenticatedApp();
+          return;
+        }
+
+        if (!S.adminToken) {
+          setAuthMode("locked");
+          setAuthStatus("请输入管理员账号和密码后进入后台。");
+          focusLoginField();
+          return;
+        }
+
+        setAuthStatus("检测到本机已保存的登录令牌，正在自动进入后台...");
+        try {
+          await initializeAuthenticatedApp();
+          return;
+        } catch (error) {
+          if (isUnauthorizedError(error)) {
+            clearClientAuthentication();
+            setAuthMode("locked");
+            setAuthError("本机保存的登录已失效，请重新输入管理员账号和密码。");
+            setAuthStatus("请重新验证后进入后台。");
+            focusLoginField();
+            return;
+          }
+          throw error;
+        }
       }
 
       boot().catch((error) => {
