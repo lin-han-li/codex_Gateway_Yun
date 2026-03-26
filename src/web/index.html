@@ -2351,6 +2351,15 @@
         }
       }
 
+      function ensureEarlyAuthFormBinding() {
+        const authForm = document.getElementById("authLoginForm");
+        if (authForm && authForm.dataset.submitBound !== "1") {
+          authForm.addEventListener("submit", handleLoginSubmit);
+          authForm.dataset.submitBound = "1";
+        }
+        renderAuthShell();
+      }
+
       function clearStoredLoginToken() {
         clearClientAuthentication();
         const password = document.getElementById("loginPasswordInput");
@@ -4820,8 +4829,7 @@
           }
         });
         document.getElementById("accountJsonImportInput")?.addEventListener("change", handleJsonAccountImport);
-        const authForm = document.getElementById("authLoginForm");
-        if (authForm) authForm.onsubmit = handleLoginSubmit;
+        ensureEarlyAuthFormBinding();
 
         const origin = document.getElementById("origin");
         if (origin) origin.textContent = window.location.origin;
@@ -4887,6 +4895,8 @@
           throw error;
         }
       }
+
+      ensureEarlyAuthFormBinding();
 
       boot().catch((error) => {
         const msg = error instanceof Error ? error.message : String(error);
