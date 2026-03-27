@@ -4732,216 +4732,242 @@
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
 
-      function buildBasicConfigSwitchCmd(key, apiBase) {
-        const lines = [
+      function toPowerShellSingleQuoted(value) {
+        return String(value ?? "").replaceAll("'", "''");
+      }
+
+      function toPowerShellEncodedCommand(script) {
+        const input = String(script ?? "");
+        let binary = "";
+        for (let i = 0; i < input.length; i += 1) {
+          const code = input.charCodeAt(i);
+          binary += String.fromCharCode(code & 255, (code >> 8) & 255);
+        }
+        return btoa(binary);
+      }
+
+      function buildPowerShellBatchScript(script, failureMessage) {
+        const encoded = toPowerShellEncodedCommand(script);
+        return [
           "@echo off",
-          "setlocal",
-          "set \"CODEX_HOME=%USERPROFILE%\\.codex\"",
-          "set \"CONFIG_FILE=%CODEX_HOME%\\config.toml\"",
-          "set \"AUTH_FILE=%CODEX_HOME%\\auth.json\"",
-          "set \"LAUNCHER_FILE=%CODEX_HOME%\\codex-gateway.cmd\"",
-          "set \"START_MENU_SHORTCUT=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Codex Gateway.lnk\"",
-          "set \"DESKTOP_SHORTCUT=%USERPROFILE%\\Desktop\\Codex Gateway.lnk\"",
-          `set "API_BASE=${apiBase}"`,
-          `set "VIRTUAL_KEY=${key}"`,
-          "if not exist \"%CODEX_HOME%\" mkdir \"%CODEX_HOME%\"",
-          "",
-          "for /f %%i in ('powershell -NoProfile -Command \"Get-Date -Format yyyyMMdd-HHmmss\"') do set \"TS=%%i\"",
-          "if exist \"%CONFIG_FILE%\" copy /Y \"%CONFIG_FILE%\" \"%CODEX_HOME%\\config.backup.%TS%.toml\" >nul",
-          "if exist \"%AUTH_FILE%\" copy /Y \"%AUTH_FILE%\" \"%CODEX_HOME%\\auth.backup.%TS%.json\" >nul",
-          "",
-          `powershell -NoProfile -ExecutionPolicy Bypass -Command "$cfgPath=$env:CONFIG_FILE; $apiBase=$env:API_BASE; $cfgLine='openai_base_url = \"' + $apiBase + '\"'; $cfg=''; if(Test-Path $cfgPath){$cfg=[System.IO.File]::ReadAllText($cfgPath)}; $cfg=[System.Text.RegularExpressions.Regex]::Replace($cfg,'(?m)^[ \t]*openai_base_url\s*=.*(?:\r?\n)?',''); $cfg=$cfg.TrimStart([char]13,[char]10); if([string]::IsNullOrWhiteSpace($cfg)){ $cfg=$cfgLine + [Environment]::NewLine } else { $cfg=$cfgLine + [Environment]::NewLine + $cfg }; $utf8NoBom=New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($cfgPath,$cfg,$utf8NoBom)"`,
-          "if errorlevel 1 (",
-          "  echo Failed to update config.toml",
-          "  exit /b 1",
-          ")",
-          "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$auth=$env:AUTH_FILE; $authObj=@{ auth_mode='apikey'; OPENAI_API_KEY=$env:VIRTUAL_KEY }; $json=($authObj | ConvertTo-Json -Depth 5) + [Environment]::NewLine; $utf8NoBom=New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($auth,$json,$utf8NoBom)\"",
-          "if errorlevel 1 (",
-          "  echo Failed to write auth.json",
-          "  exit /b 1",
-          ")",
-          "if exist \"%LAUNCHER_FILE%\" del /F /Q \"%LAUNCHER_FILE%\" >nul 2>nul",
-          "if exist \"%START_MENU_SHORTCUT%\" del /F /Q \"%START_MENU_SHORTCUT%\" >nul 2>nul",
-          "if exist \"%DESKTOP_SHORTCUT%\" del /F /Q \"%DESKTOP_SHORTCUT%\" >nul 2>nul",
-          "",
-          "echo Updated official-style Codex files:",
-          "echo   - %CONFIG_FILE% (only openai_base_url)",
-          "echo   - %AUTH_FILE% (apikey mode + virtual key)",
+          "setlocal EnableExtensions",
+          `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encoded}`,
+          "set \"EXIT_CODE=%ERRORLEVEL%\"",
           "echo.",
-          "echo Removed any prior gateway-only launcher shortcuts for this user.",
-          "echo Launch Codex normally from its original icon or command.",
-          "echo.",
+          "if not \"%EXIT_CODE%\"==\"0\" (",
+          `  echo ${failureMessage}`,
+          ")",
           "pause",
-        ];
-        return lines.join("\r\n");
+          "exit /b %EXIT_CODE%",
+        ].join("\r\n");
+      }
+
+      function buildBasicSetupPowerShell(key, apiBase) {
+        const escapedKey = toPowerShellSingleQuoted(key);
+        const escapedApiBase = toPowerShellSingleQuoted(apiBase);
+        return [
+          "$ErrorActionPreference = 'Stop'",
+          `$apiBase = '${escapedApiBase}'`,
+          `$key = '${escapedKey}'`,
+          "$codexHome = Join-Path $env:USERPROFILE '.codex'",
+          "$configFile = Join-Path $codexHome 'config.toml'",
+          "$authFile = Join-Path $codexHome 'auth.json'",
+          "$launcherFile = Join-Path $codexHome 'codex-gateway.cmd'",
+          "$startMenuShortcut = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\Codex Gateway.lnk'",
+          "$desktopShortcut = Join-Path $env:USERPROFILE 'Desktop\\Codex Gateway.lnk'",
+          "New-Item -ItemType Directory -Force -Path $codexHome | Out-Null",
+          "$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'",
+          "$configBackup = Join-Path $codexHome ('config.backup.' + $timestamp + '.toml')",
+          "$authBackup = Join-Path $codexHome ('auth.backup.' + $timestamp + '.json')",
+          "if (Test-Path $configFile) { Copy-Item -Force $configFile $configBackup }",
+          "if (Test-Path $authFile) { Copy-Item -Force $authFile $authBackup }",
+          "$cfgLine = 'openai_base_url = \"' + $apiBase + '\"'",
+          "$cfg = ''",
+          "if (Test-Path $configFile) { $cfg = [System.IO.File]::ReadAllText($configFile) }",
+          "$cfg = [System.Text.RegularExpressions.Regex]::Replace($cfg, '(?m)^[ \\t]*openai_base_url\\s*=.*(?:\\r?\\n)?', '')",
+          "$cfg = $cfg.TrimStart(\"`r\", \"`n\")",
+          "if ([string]::IsNullOrWhiteSpace($cfg)) { $cfg = $cfgLine + [Environment]::NewLine } else { $cfg = $cfgLine + [Environment]::NewLine + $cfg }",
+          "$authObj = @{ auth_mode = 'apikey'; OPENAI_API_KEY = $key }",
+          "$authJson = ($authObj | ConvertTo-Json -Depth 5) + [Environment]::NewLine",
+          "$utf8NoBom = New-Object System.Text.UTF8Encoding($false)",
+          "[System.IO.File]::WriteAllText($configFile, $cfg, $utf8NoBom)",
+          "[System.IO.File]::WriteAllText($authFile, $authJson, $utf8NoBom)",
+          "foreach ($path in @($launcherFile, $startMenuShortcut, $desktopShortcut)) { if (Test-Path $path) { Remove-Item -Force $path -ErrorAction SilentlyContinue } }",
+          "Write-Host '[OK] Updated official-style Codex files:'",
+          "Write-Host ('  Config : ' + $configFile)",
+          "Write-Host ('  Auth   : ' + $authFile)",
+          "Write-Host '[OK] Removed any prior gateway-only launcher shortcuts for this user.'",
+          "Write-Host '[INFO] Launch Codex normally from its original icon or command.'",
+        ].join('\n');
+      }
+
+      function buildGatewaySetupPowerShell(key, apiBase) {
+        const escapedKey = toPowerShellSingleQuoted(key);
+        const escapedApiBase = toPowerShellSingleQuoted(apiBase);
+        return [
+          "$ErrorActionPreference = 'Stop'",
+          `$apiBase = '${escapedApiBase}'`,
+          `$key = '${escapedKey}'`,
+          "$codexHome = Join-Path $env:USERPROFILE '.codex'",
+          "$configFile = Join-Path $codexHome 'config.toml'",
+          "$authFile = Join-Path $codexHome 'auth.json'",
+          "$launcherFile = Join-Path $codexHome 'codex-gateway.cmd'",
+          "$startMenuShortcut = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\Codex Gateway.lnk'",
+          "$desktopShortcut = Join-Path $env:USERPROFILE 'Desktop\\Codex Gateway.lnk'",
+          "New-Item -ItemType Directory -Force -Path $codexHome | Out-Null",
+          "$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'",
+          "$configBackup = Join-Path $codexHome ('config.backup.' + $timestamp + '.toml')",
+          "$authBackup = Join-Path $codexHome ('auth.backup.' + $timestamp + '.json')",
+          "if (Test-Path $configFile) { Copy-Item -Force $configFile $configBackup }",
+          "if (Test-Path $authFile) { Copy-Item -Force $authFile $authBackup }",
+          "$cfgLine = 'openai_base_url = \"' + $apiBase + '\"'",
+          "$cfg = ''",
+          "if (Test-Path $configFile) { $cfg = [System.IO.File]::ReadAllText($configFile) }",
+          "$cfg = [System.Text.RegularExpressions.Regex]::Replace($cfg, '(?m)^[ \\t]*openai_base_url\\s*=.*(?:\\r?\\n)?', '')",
+          "$cfg = $cfg.TrimStart(\"`r\", \"`n\")",
+          "if ([string]::IsNullOrWhiteSpace($cfg)) { $cfg = $cfgLine + [Environment]::NewLine } else { $cfg = $cfgLine + [Environment]::NewLine + $cfg }",
+          "$authObj = @{ auth_mode = 'apikey'; OPENAI_API_KEY = $key }",
+          "$authJson = ($authObj | ConvertTo-Json -Depth 5) + [Environment]::NewLine",
+          "$gatewayHost = ''",
+          "try { $uri = [Uri]$apiBase; if ($uri.Host) { $gatewayHost = $uri.Host } } catch {}",
+          "$noProxyValues = New-Object 'System.Collections.Generic.List[string]'",
+          "foreach ($entry in @('localhost', '127.0.0.1', $gatewayHost)) { if ($entry -and -not $noProxyValues.Contains($entry)) { [void]$noProxyValues.Add($entry) } }",
+          "$noProxy = [string]::Join(',', $noProxyValues)",
+          "$launcherLines = @(",
+          "  '@echo off',",
+          "  'setlocal',",
+          "  ('set \"NO_PROXY=' + $noProxy + '\"'),",
+          "  'set \"HTTP_PROXY=\"',",
+          "  'set \"HTTPS_PROXY=\"',",
+          "  'set \"ALL_PROXY=\"',",
+          "  'set \"OPENAI_BASE_URL=\"',",
+          "  'set \"OPENAI_API_BASE=\"',",
+          "  'set \"OPENAI_API_KEY=\"',",
+          "  'codex -p default %*',",
+          "  ''",
+          ")",
+          "$launcher = [string]::Join([Environment]::NewLine, $launcherLines)",
+          "$utf8NoBom = New-Object System.Text.UTF8Encoding($false)",
+          "[System.IO.File]::WriteAllText($configFile, $cfg, $utf8NoBom)",
+          "[System.IO.File]::WriteAllText($authFile, $authJson, $utf8NoBom)",
+          "[System.IO.File]::WriteAllText($launcherFile, $launcher, $utf8NoBom)",
+          "$shell = New-Object -ComObject WScript.Shell",
+          "foreach ($shortcutPath in @($startMenuShortcut, $desktopShortcut)) {",
+          "  $dir = Split-Path -Parent $shortcutPath",
+          "  if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }",
+          "  $shortcut = $shell.CreateShortcut($shortcutPath)",
+          "  $shortcut.TargetPath = $launcherFile",
+          "  $shortcut.WorkingDirectory = $env:USERPROFILE",
+          "  $shortcut.Description = 'Codex gateway launcher'",
+          "  $shortcut.Save()",
+          "}",
+          "Write-Host '[OK] Updated official-style Codex files:'",
+          "Write-Host ('  Config : ' + $configFile)",
+          "Write-Host ('  Auth   : ' + $authFile)",
+          "Write-Host ('  Launcher: ' + $launcherFile)",
+          "Write-Host ('  Start Menu Shortcut: ' + $startMenuShortcut)",
+          "Write-Host ('  Desktop Shortcut   : ' + $desktopShortcut)",
+          "Write-Host '[INFO] Open Codex via the \"Codex Gateway\" shortcut from the desktop or Start Menu.'",
+        ].join('\n');
+      }
+
+      function buildRestorePowerShell() {
+        return [
+          "$ErrorActionPreference = 'Stop'",
+          "function Get-LatestBackup([string]$path, [string]$pattern) {",
+          "  if (-not (Test-Path $path)) { return $null }",
+          "  $item = Get-ChildItem -Path $path -Filter $pattern -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1",
+          "  if ($item) { return $item.FullName }",
+          "  return $null",
+          "}",
+          "$codexHome = Join-Path $env:USERPROFILE '.codex'",
+          "$configFile = Join-Path $codexHome 'config.toml'",
+          "$authFile = Join-Path $codexHome 'auth.json'",
+          "$launcherFile = Join-Path $codexHome 'codex-gateway.cmd'",
+          "$startMenuShortcut = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\Codex Gateway.lnk'",
+          "$desktopShortcut = Join-Path $env:USERPROFILE 'Desktop\\Codex Gateway.lnk'",
+          "if (-not (Test-Path $codexHome)) { throw ('Codex home does not exist: ' + $codexHome) }",
+          "$restoreWarn = $false",
+          "$latestConfigBackup = Get-LatestBackup $codexHome 'config.backup.*.toml'",
+          "$latestAuthBackup = Get-LatestBackup $codexHome 'auth.backup.*.json'",
+          "if ($latestConfigBackup) {",
+          "  Copy-Item -Force $latestConfigBackup $configFile",
+          "  Write-Host '[OK] Restored config.toml from:'",
+          "  Write-Host ('     ' + $latestConfigBackup)",
+          "} else {",
+          "  Write-Host ('[WARN] No config backup found under ' + $codexHome)",
+          "  $restoreWarn = $true",
+          "}",
+          "if ($latestAuthBackup) {",
+          "  Copy-Item -Force $latestAuthBackup $authFile",
+          "  Write-Host '[OK] Restored auth.json from:'",
+          "  Write-Host ('     ' + $latestAuthBackup)",
+          "} else {",
+          "  Write-Host ('[WARN] No auth backup found under ' + $codexHome)",
+          "  $restoreWarn = $true",
+          "}",
+          "foreach ($path in @($launcherFile, $startMenuShortcut, $desktopShortcut)) { if (Test-Path $path) { Remove-Item -Force $path -ErrorAction SilentlyContinue } }",
+          "foreach ($name in @('OPENAI_BASE_URL', 'OPENAI_API_BASE', 'OPENAI_API_KEY', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY')) {",
+          "  Remove-ItemProperty -Path 'HKCU:\\Environment' -Name $name -ErrorAction SilentlyContinue",
+          "}",
+          "Write-Host ''",
+          "if ($restoreWarn) { Write-Host '[WARN] Restore finished with warnings. Please review messages above.' } else { Write-Host '[OK] Codex defaults restored from backup files.' }",
+          "Write-Host '[INFO] Launching Codex in default mode...'",
+          "$launched = $false",
+          "if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {",
+          "  try {",
+          "    $pkg = Get-AppxPackage -Name OpenAI.Codex -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1",
+          "    if ($pkg) {",
+          "      $aumid = $pkg.PackageFamilyName + '!App'",
+          "      Start-Process -FilePath 'explorer.exe' -ArgumentList ('shell:AppsFolder\\' + $aumid)",
+          "      $launched = $true",
+          "    }",
+          "  } catch {}",
+          "}",
+          "if (-not $launched -and (Get-Command Get-StartApps -ErrorAction SilentlyContinue)) {",
+          "  try {",
+          "    $startApp = Get-StartApps -ErrorAction SilentlyContinue | Where-Object { $_.AppID -like '*OpenAI.Codex*' } | Select-Object -First 1",
+          "    if ($startApp) {",
+          "      Start-Process -FilePath 'explorer.exe' -ArgumentList ('shell:AppsFolder\\' + $startApp.AppID)",
+          "      $launched = $true",
+          "    }",
+          "  } catch {}",
+          "}",
+          "if (-not $launched) {",
+          "  $cmd = Get-Command codex.exe -ErrorAction SilentlyContinue",
+          "  if (-not $cmd) { $cmd = Get-Command codex -ErrorAction SilentlyContinue }",
+          "  if ($cmd) {",
+          "    try {",
+          "      $cmdPath = if ($cmd.Source) { $cmd.Source } else { 'codex' }",
+          "      Start-Process -FilePath $cmdPath -ArgumentList '-p', 'default'",
+          "      $launched = $true",
+          "    } catch {",
+          "      try {",
+          "        Start-Process -FilePath 'codex' -ArgumentList '-p', 'default'",
+          "        $launched = $true",
+          "      } catch {}",
+          "    }",
+          "  }",
+          "}",
+          "if ($launched) {",
+          "  Write-Host '[OK] Codex launch command sent.'",
+          "} else {",
+          "  Write-Host '[WARN] Failed to launch Codex automatically.'",
+          "  Write-Host '[WARN] You can manually run: codex -p default'",
+          "}",
+        ].join('\n');
+      }
+
+      function buildBasicConfigSwitchCmd(key, apiBase) {
+        return buildPowerShellBatchScript(buildBasicSetupPowerShell(key, apiBase), "[ERROR] Failed to update Codex files.");
       }
 
       function buildGatewayConfigSwitchCmd(key, apiBase) {
-        const gatewayHost = (() => {
-          try {
-            return new URL(apiBase).hostname || "";
-          } catch {
-            return "";
-          }
-        })();
-        const noProxyValue = [...new Set(["localhost", "127.0.0.1", gatewayHost].filter(Boolean))].join(",");
-        const configToml = [`openai_base_url = ${toTomlString(apiBase)}`, ""].join("\n");
-        const authJson = `${JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: key }, null, 2)}\n`;
-        const launcherCmd = [
-          "@echo off",
-          "setlocal",
-          `set "NO_PROXY=${noProxyValue}"`,
-          "set \"HTTP_PROXY=\"",
-          "set \"HTTPS_PROXY=\"",
-          "set \"ALL_PROXY=\"",
-          "set \"OPENAI_BASE_URL=\"",
-          "set \"OPENAI_API_BASE=\"",
-          "set \"OPENAI_API_KEY=\"",
-          "codex -p default %*",
-          "",
-        ].join("\r\n");
-
-        const configBytes = new TextEncoder().encode(configToml);
-        let configBinary = "";
-        for (let i = 0; i < configBytes.length; i += 1) configBinary += String.fromCharCode(configBytes[i]);
-        const configB64 = btoa(configBinary);
-
-        const authBytes = new TextEncoder().encode(authJson);
-        let authBinary = "";
-        for (let i = 0; i < authBytes.length; i += 1) authBinary += String.fromCharCode(authBytes[i]);
-        const authB64 = btoa(authBinary);
-
-        const launcherBytes = new TextEncoder().encode(launcherCmd);
-        let launcherBinary = "";
-        for (let i = 0; i < launcherBytes.length; i += 1) launcherBinary += String.fromCharCode(launcherBytes[i]);
-        const launcherB64 = btoa(launcherBinary);
-
-        const lines = [
-          "@echo off",
-          "setlocal",
-          "set \"CODEX_HOME=%USERPROFILE%\\.codex\"",
-          "set \"CONFIG_FILE=%CODEX_HOME%\\config.toml\"",
-          "set \"AUTH_FILE=%CODEX_HOME%\\auth.json\"",
-          "set \"LAUNCHER_FILE=%CODEX_HOME%\\codex-gateway.cmd\"",
-          "set \"START_MENU_SHORTCUT=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Codex Gateway.lnk\"",
-          "set \"DESKTOP_SHORTCUT=%USERPROFILE%\\Desktop\\Codex Gateway.lnk\"",
-          `set "API_BASE=${apiBase}"`,
-          `set "VIRTUAL_KEY=${key}"`,
-          "if not exist \"%CODEX_HOME%\" mkdir \"%CODEX_HOME%\"",
-          "",
-          "for /f %%i in ('powershell -NoProfile -Command \"Get-Date -Format yyyyMMdd-HHmmss\"') do set \"TS=%%i\"",
-          "if exist \"%CONFIG_FILE%\" copy /Y \"%CONFIG_FILE%\" \"%CODEX_HOME%\\config.backup.%TS%.toml\" >nul",
-          "if exist \"%AUTH_FILE%\" copy /Y \"%AUTH_FILE%\" \"%CODEX_HOME%\\auth.backup.%TS%.json\" >nul",
-          "",
-          `set "CONFIG_B64=${configB64}"`,
-          `set "AUTH_B64=${authB64}"`,
-          `set "LAUNCHER_B64=${launcherB64}"`,
-          `powershell -NoProfile -ExecutionPolicy Bypass -Command "$cfgPath=$env:CONFIG_FILE; $apiBase=$env:API_BASE; $cfgLine='openai_base_url = \"' + $apiBase + '\"'; $cfg=''; if(Test-Path $cfgPath){$cfg=[System.IO.File]::ReadAllText($cfgPath)}; $cfg=[System.Text.RegularExpressions.Regex]::Replace($cfg,'(?m)^[ \t]*openai_base_url\s*=.*(?:\r?\n)?',''); $cfg=$cfg.TrimStart([char]13,[char]10); if([string]::IsNullOrWhiteSpace($cfg)){ $cfg=$cfgLine + [Environment]::NewLine } else { $cfg=$cfgLine + [Environment]::NewLine + $cfg }; $utf8NoBom=New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($cfgPath,$cfg,$utf8NoBom)"`,
-          "if errorlevel 1 (",
-          "  echo Failed to update config.toml",
-          "  exit /b 1",
-          ")",
-          "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$auth=$env:AUTH_FILE; $b64=$env:AUTH_B64; $bytes=[Convert]::FromBase64String($b64); [System.IO.File]::WriteAllBytes($auth,$bytes)\"",
-          "if errorlevel 1 (",
-          "  echo Failed to write auth.json",
-          "  exit /b 1",
-          ")",
-          "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$launcher=$env:LAUNCHER_FILE; $b64=$env:LAUNCHER_B64; $bytes=[Convert]::FromBase64String($b64); [System.IO.File]::WriteAllBytes($launcher,$bytes)\"",
-          "if errorlevel 1 (",
-          "  echo Failed to write codex-gateway.cmd",
-          "  exit /b 1",
-          ")",
-          "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference='Stop'; $launcher=$env:LAUNCHER_FILE; $shortcuts=@($env:START_MENU_SHORTCUT,$env:DESKTOP_SHORTCUT) | Where-Object { $_ }; $shell=New-Object -ComObject WScript.Shell; foreach($shortcutPath in $shortcuts){ $dir=Split-Path -Parent $shortcutPath; if($dir -and -not (Test-Path $dir)){ New-Item -ItemType Directory -Force -Path $dir | Out-Null }; $shortcut=$shell.CreateShortcut($shortcutPath); $shortcut.TargetPath=$launcher; $shortcut.WorkingDirectory=$env:USERPROFILE; $shortcut.Description='Codex gateway launcher'; $shortcut.Save() }\"",
-          "if errorlevel 1 (",
-          "  echo Failed to create Codex Gateway shortcuts",
-          "  exit /b 1",
-          ")",
-          "",
-          "set \"CONFIG_B64=\"",
-          "set \"AUTH_B64=\"",
-          "set \"LAUNCHER_B64=\"",
-          "",
-          "echo Updated official-style Codex files:",
-          "echo   - %CONFIG_FILE% (only openai_base_url)",
-          "echo   - %AUTH_FILE% (apikey mode + virtual key)",
-          "echo   - %LAUNCHER_FILE% (Codex-only launcher with proxy bypass)",
-          "echo   - %START_MENU_SHORTCUT% (persistent Start Menu shortcut)",
-          "echo   - %DESKTOP_SHORTCUT% (persistent desktop shortcut)",
-          "echo.",
-          "echo Open Codex via \"Codex Gateway\" shortcut from the desktop or Start Menu.",
-          "echo.",
-          "pause",
-        ];
-        return lines.join("\r\n");
+        return buildPowerShellBatchScript(buildGatewaySetupPowerShell(key, apiBase), "[ERROR] Failed to update Codex gateway launcher files.");
       }
 
       function buildConfigRestoreCmd() {
-        const lines = [
-          "@echo off",
-          "setlocal",
-          "set \"CODEX_HOME=%USERPROFILE%\\.codex\"",
-          "set \"CONFIG_FILE=%CODEX_HOME%\\config.toml\"",
-          "set \"AUTH_FILE=%CODEX_HOME%\\auth.json\"",
-          "set \"LAUNCHER_FILE=%CODEX_HOME%\\codex-gateway.cmd\"",
-          "set \"START_MENU_SHORTCUT=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Codex Gateway.lnk\"",
-          "set \"DESKTOP_SHORTCUT=%USERPROFILE%\\Desktop\\Codex Gateway.lnk\"",
-          "if not exist \"%CODEX_HOME%\" mkdir \"%CODEX_HOME%\"",
-          "",
-          "set \"LATEST_CONFIG_BACKUP=\"",
-          "set \"LATEST_AUTH_BACKUP=\"",
-          "for /f \"delims=\" %%i in ('powershell -NoProfile -Command \"$f=Get-ChildItem -Path $env:CODEX_HOME -Filter ''config.backup.*.toml'' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName; if($f){$f}\"') do set \"LATEST_CONFIG_BACKUP=%%i\"",
-          "for /f \"delims=\" %%i in ('powershell -NoProfile -Command \"$f=Get-ChildItem -Path $env:CODEX_HOME -Filter ''auth.backup.*.json'' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName; if($f){$f}\"') do set \"LATEST_AUTH_BACKUP=%%i\"",
-          "",
-          "set \"RESTORE_WARN=0\"",
-          "if defined LATEST_CONFIG_BACKUP (",
-          "  copy /Y \"%LATEST_CONFIG_BACKUP%\" \"%CONFIG_FILE%\" >nul",
-          "  if errorlevel 1 (",
-          "    echo [FAIL] Failed to restore config.toml",
-          "    set \"RESTORE_WARN=1\"",
-          "  ) else (",
-          "    echo [OK] Restored config.toml from backup:",
-          "    echo      %LATEST_CONFIG_BACKUP%",
-          "  )",
-          ") else (",
-          "  echo [WARN] No config backup found under %CODEX_HOME%",
-          "  set \"RESTORE_WARN=1\"",
-          ")",
-          "",
-          "if defined LATEST_AUTH_BACKUP (",
-          "  copy /Y \"%LATEST_AUTH_BACKUP%\" \"%AUTH_FILE%\" >nul",
-          "  if errorlevel 1 (",
-          "    echo [FAIL] Failed to restore auth.json",
-          "    set \"RESTORE_WARN=1\"",
-          "  ) else (",
-          "    echo [OK] Restored auth.json from backup:",
-          "    echo      %LATEST_AUTH_BACKUP%",
-          "  )",
-          ") else (",
-          "  echo [WARN] No auth backup found under %CODEX_HOME%",
-          "  set \"RESTORE_WARN=1\"",
-          ")",
-          "",
-          "if exist \"%LAUNCHER_FILE%\" del /F /Q \"%LAUNCHER_FILE%\" >nul 2>nul",
-          "if exist \"%START_MENU_SHORTCUT%\" del /F /Q \"%START_MENU_SHORTCUT%\" >nul 2>nul",
-          "if exist \"%DESKTOP_SHORTCUT%\" del /F /Q \"%DESKTOP_SHORTCUT%\" >nul 2>nul",
-          "",
-          "if \"%RESTORE_WARN%\"==\"0\" (",
-          "  echo [OK] Codex config restored from backups.",
-          ") else (",
-          "  echo [WARN] Restore completed with warnings. Please review messages above.",
-          ")",
-          "echo [INFO] Launching Codex in default mode (no proxy overrides)...",
-          "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference='Stop'; $pkg=Get-AppxPackage -Name OpenAI.Codex -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1; if($pkg){$aumid=$pkg.PackageFamilyName + '!App'; Start-Process -FilePath 'explorer.exe' -ArgumentList ('shell:AppsFolder\\\\' + $aumid); exit 0 }; $startApp=Get-StartApps -ErrorAction SilentlyContinue | Where-Object { $_.AppID -like '*OpenAI.Codex*' } | Select-Object -First 1; if($startApp){ Start-Process -FilePath 'explorer.exe' -ArgumentList ('shell:AppsFolder\\\\' + $startApp.AppID); exit 0 }; $cmd=Get-Command codex -ErrorAction SilentlyContinue; if($cmd){ Start-Process -FilePath 'codex' -ArgumentList '-p','default'; exit 0 }; throw 'Codex executable not found'\"",
-          "if errorlevel 1 (",
-          "  echo [WARN] Failed to launch Codex automatically.",
-          "  echo [WARN] You can manually run: codex -p default",
-          ") else (",
-          "  echo [OK] Codex launch command sent.",
-          ")",
-          "echo.",
-          "pause",
-        ];
-        return lines.join("\r\n");
+        return buildPowerShellBatchScript(buildRestorePowerShell(), "[ERROR] Restore command failed.");
       }
 
       function buildKeyUsageText(mode, row, key) {

@@ -764,20 +764,54 @@ const SyncOAuthSchema = z.object({
   issueVirtualKey: z.boolean().optional().default(true),
 })
 
+function normalizeImportedJsonString(value: unknown) {
+  if (value == null) return undefined
+  const normalized = String(value).trim()
+  return normalized.length > 0 ? normalized : undefined
+}
+
+function preprocessImportedJsonString(value: unknown) {
+  return normalizeImportedJsonString(value)
+}
+
+function preprocessImportedJsonDateValue(value: unknown) {
+  if (value == null) return undefined
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  return normalizeImportedJsonString(value)
+}
+
+const ImportJsonOptionalString = (schema: z.ZodString) =>
+  z.preprocess(preprocessImportedJsonString, schema.optional())
+
 const ImportJsonAccountSchema = z
   .object({
-    type: z.string().trim().max(80).optional(),
-    email: z.string().trim().email().optional(),
-    access_token: z.string().trim().min(1).optional(),
-    accessToken: z.string().trim().min(1).optional(),
-    refresh_token: z.string().trim().min(1).optional(),
-    refreshToken: z.string().trim().min(1).optional(),
-    id_token: z.string().trim().min(1).optional(),
-    idToken: z.string().trim().min(1).optional(),
-    last_refresh: z.string().trim().max(120).optional(),
-    lastRefresh: z.string().trim().max(120).optional(),
+    type: ImportJsonOptionalString(z.string().max(80)),
+    email: ImportJsonOptionalString(z.string().email()),
+    access_token: ImportJsonOptionalString(z.string().min(1)),
+    accessToken: ImportJsonOptionalString(z.string().min(1)),
+    refresh_token: ImportJsonOptionalString(z.string().min(1)),
+    refreshToken: ImportJsonOptionalString(z.string().min(1)),
+    id_token: ImportJsonOptionalString(z.string().min(1)),
+    idToken: ImportJsonOptionalString(z.string().min(1)),
+    account_id: ImportJsonOptionalString(z.string().max(200)),
+    accountId: ImportJsonOptionalString(z.string().max(200)),
+    workspace_id: ImportJsonOptionalString(z.string().max(200)),
+    workspaceId: ImportJsonOptionalString(z.string().max(200)),
+    client_id: ImportJsonOptionalString(z.string().max(200)),
+    clientId: ImportJsonOptionalString(z.string().max(200)),
+    session_token: ImportJsonOptionalString(z.string().max(500)),
+    sessionToken: ImportJsonOptionalString(z.string().max(500)),
+    email_service: ImportJsonOptionalString(z.string().max(120)),
+    emailService: ImportJsonOptionalString(z.string().max(120)),
+    registered_at: ImportJsonOptionalString(z.string().max(120)),
+    registeredAt: ImportJsonOptionalString(z.string().max(120)),
+    status: ImportJsonOptionalString(z.string().max(80)),
+    last_refresh: ImportJsonOptionalString(z.string().max(120)),
+    lastRefresh: ImportJsonOptionalString(z.string().max(120)),
+    expires_at: z.preprocess(preprocessImportedJsonDateValue, z.union([z.string(), z.number()]).optional()),
+    expiresAt: z.preprocess(preprocessImportedJsonDateValue, z.union([z.string(), z.number()]).optional()),
     issueVirtualKey: z.boolean().optional().default(false),
-    keyName: z.string().trim().max(120).optional(),
+    keyName: ImportJsonOptionalString(z.string().max(120)),
   })
   .superRefine((value, ctx) => {
     if (!String(value.access_token ?? value.accessToken ?? "").trim()) {
@@ -1631,6 +1665,17 @@ function toEpochMs(value: number | null) {
   return value < 1_000_000_000_000 ? Math.floor(value * 1000) : Math.floor(value)
 }
 
+function parseImportedJsonExpiresAt(value: unknown) {
+  const numeric = asFiniteNumber(value)
+  if (numeric !== null) return toEpochMs(numeric) ?? undefined
+  const normalized = normalizeImportedJsonString(value)
+  if (!normalized) return undefined
+  const parsedNumeric = asFiniteNumber(normalized)
+  if (parsedNumeric !== null) return toEpochMs(parsedNumeric) ?? undefined
+  const parsedDate = Date.parse(normalized)
+  return Number.isFinite(parsedDate) ? Math.floor(parsedDate) : undefined
+}
+
 function normalizeQuotaWindow(window: unknown): AccountQuotaWindow | null {
   const record = asObjectRecord(window)
   if (!record) return null
@@ -2039,6 +2084,14 @@ function resolveImportedJsonOAuthAccount(input: z.infer<typeof ImportJsonAccount
   const idToken = normalizeIdentity(String(input.id_token ?? input.idToken ?? ""))
   const importedType = normalizeIdentity(input.type)
   const lastRefresh = normalizeIdentity(String(input.last_refresh ?? input.lastRefresh ?? ""))
+  const importedAccountId = normalizeImportedJsonString(input.account_id ?? input.accountId)
+  const importedWorkspaceId = normalizeImportedJsonString(input.workspace_id ?? input.workspaceId)
+  const importedClientId = normalizeImportedJsonString(input.client_id ?? input.clientId)
+  const importedSessionToken = normalizeImportedJsonString(input.session_token ?? input.sessionToken)
+  const importedEmailService = normalizeImportedJsonString(input.email_service ?? input.emailService)
+  const importedRegisteredAt = normalizeImportedJsonString(input.registered_at ?? input.registeredAt)
+  const importedStatus = normalizeImportedJsonString(input.status)
+  const importedExpiresAt = parseImportedJsonExpiresAt(input.expires_at ?? input.expiresAt)
 
   const accessPayload = parseJwtPayload(accessToken)
   const idPayload = parseJwtPayload(idToken)
@@ -2053,7 +2106,10 @@ function resolveImportedJsonOAuthAccount(input: z.infer<typeof ImportJsonAccount
     normalizeIdentity(String(idProfile?.email ?? "")) ||
     normalizeIdentity(input.email)
   const resolvedAccountId =
-    normalizeIdentity(accessAuth?.chatgpt_account_id) || normalizeIdentity(idAuth?.chatgpt_account_id)
+    normalizeIdentity(accessAuth?.chatgpt_account_id) ||
+    normalizeIdentity(idAuth?.chatgpt_account_id) ||
+    importedAccountId ||
+    importedWorkspaceId
   const resolvedChatgptPlanType =
     normalizeIdentity(accessAuth?.chatgpt_plan_type) || normalizeIdentity(idAuth?.chatgpt_plan_type)
   const resolvedChatgptUserId =
@@ -2079,7 +2135,10 @@ function resolveImportedJsonOAuthAccount(input: z.infer<typeof ImportJsonAccount
       : typeof idAuth?.is_org_owner === "boolean"
         ? idAuth.is_org_owner
         : undefined
-  const expiresAt = toEpochMs(asFiniteNumber(accessPayload?.exp)) ?? toEpochMs(asFiniteNumber(idPayload?.exp))
+  const expiresAt =
+    toEpochMs(asFiniteNumber(accessPayload?.exp)) ??
+    toEpochMs(asFiniteNumber(idPayload?.exp)) ??
+    importedExpiresAt
 
   if (!resolvedEmail && !resolvedAccountId) {
     throw new Error("Imported JSON does not contain a usable email or chatgpt_account_id")
@@ -2097,6 +2156,13 @@ function resolveImportedJsonOAuthAccount(input: z.infer<typeof ImportJsonAccount
       source: "codex-json-import",
       importedType,
       lastRefresh,
+      importedAccountId,
+      importedWorkspaceId,
+      importedClientId,
+      importedEmailService,
+      importedRegisteredAt,
+      importedStatus,
+      importedSessionTokenPresent: Boolean(importedSessionToken),
       organizationId: resolvedOrganizationId,
       projectId: resolvedProjectId,
       chatgptPlanType: resolvedChatgptPlanType,
