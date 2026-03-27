@@ -89,6 +89,32 @@ type AccountRoutingState = {
   softDrainThresholdPercent: number
 }
 
+type AccountAbnormalCategory =
+  | "normal"
+  | "quota_exhausted"
+  | "banned"
+  | "access_banned"
+  | "auth_invalid"
+  | "soft_drained"
+  | "transient"
+  | "unknown"
+
+type PublicAccountHealthSnapshot = AccountHealthSnapshot & {
+  routingExcluded: boolean
+}
+
+type AccountAbnormalState = {
+  classification: AccountAbnormalCategory
+  category: AccountAbnormalCategory
+  label: string
+  reason: string
+  source: string | null
+  detectedAt: number | null
+  expiresAt: number | null
+  confidence: "high" | "medium" | "low"
+  deleteEligible: boolean
+}
+
 type ProviderRoutingHints = {
   excludeAccountIds: string[]
   deprioritizedAccountIds: string[]
@@ -344,40 +370,36 @@ function isAllowedLocalBindHost(host: string) {
   return isPrivateLanIPv4(host)
 }
 
-type NetworkInterfaceCandidate = {
-  address?: string
-  family?: string | number
-  internal?: boolean
-}
-
-function normalizeNetworkFamily(family?: string | number | null) {
-  if (family === "IPv4" || family === 4) return "IPv4"
-  if (family === "IPv6" || family === 6) return "IPv6"
-  return String(family ?? "")
+function scoreLanInterface(name: string, address: string) {
+  const label = `${name} ${address}`.toLowerCase()
+  let score = 0
+  if (/\b(wi-?fi|wlan|wireless)\b/.test(label)) score += 120
+  if (/\b(ethernet|eth|lan)\b/.test(label)) score += 100
+  if (/\b(vmware|virtualbox|hyper-v|vbox|vethernet|wsl|docker|podman|tailscale|zerotier|hamachi|npcap|tap|tun)\b/.test(label)) {
+    score -= 200
+  }
+  if (address.startsWith("192.168.")) score += 30
+  if (address.startsWith("10.")) score += 20
+  if (address.startsWith("172.")) score += 10
+  return score
 }
 
 function collectLanIPv4Addresses() {
-  const values = new Set<string>()
-  try {
-    const interfaces = os.networkInterfaces() as Record<
-      string,
-      NetworkInterfaceCandidate | NetworkInterfaceCandidate[] | undefined
-    >
-    for (const rawEntries of Object.values(interfaces ?? {})) {
-      const entries = Array.isArray(rawEntries) ? rawEntries : rawEntries ? [rawEntries] : []
-      for (const entry of entries) {
-        if (!entry) continue
-        const family = normalizeNetworkFamily(entry.family)
-        const address = String(entry.address ?? "")
-        if (!address || family !== "IPv4" || entry.internal) continue
-        if (!isPrivateLanIPv4(address)) continue
-        values.add(address)
-      }
+  const values = new Map<string, number>()
+  const interfaces = os.networkInterfaces()
+  for (const [name, entries] of Object.entries(interfaces)) {
+    for (const entry of entries ?? []) {
+      if (!entry || entry.family !== "IPv4" || entry.internal) continue
+      if (!isPrivateLanIPv4(entry.address)) continue
+      values.set(entry.address, scoreLanInterface(name, entry.address))
     }
-  } catch {
-    return []
   }
-  return [...values]
+  return [...values.entries()]
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1]
+      return a[0].localeCompare(b[0])
+    })
+    .map(([address]) => address)
 }
 
 function formatServiceAddress(host: string, port: number) {
@@ -402,33 +424,24 @@ function buildServiceAddressInfo(host: string, port: number): ServiceAddressInfo
   const fallback = buildFallbackServiceAddressInfo(host, port)
   const normalizedHost = String(host ?? "").trim() || "127.0.0.1"
   const normalizedPort = Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 4777
-  try {
-    const lanHosts =
-      normalizedHost === "0.0.0.0" ? collectLanIPv4Addresses() : isPrivateLanIPv4(normalizedHost) ? [normalizedHost] : []
-    const lanServiceAddresses = lanHosts.map((lanHost) => formatServiceAddress(lanHost, normalizedPort))
-    return {
-      ...fallback,
-      lanServiceAddresses,
-      preferredClientServiceAddress: lanServiceAddresses[0] || fallback.activeLocalServiceAddress,
-    }
-  } catch (error) {
-    console.warn(`[oauth-multi-login] buildServiceAddressInfo failed: ${errorMessage(error)}`)
-    return fallback
+  const lanHosts =
+    normalizedHost === "0.0.0.0" ? collectLanIPv4Addresses() : isPrivateLanIPv4(normalizedHost) ? [normalizedHost] : []
+  const lanServiceAddresses = lanHosts.map((lanHost) => formatServiceAddress(lanHost, normalizedPort))
+  const preferredClientServiceAddress =
+    normalizedHost === "0.0.0.0" ? lanServiceAddresses[0] || fallback.activeLocalServiceAddress : fallback.bindServiceAddress
+  return {
+    ...fallback,
+    lanServiceAddresses,
+    preferredClientServiceAddress,
   }
 }
 
-function getSafeServiceAddressInfo(host: string, port: number) {
+function getSafeServiceAddressInfo(host: string, port: number): ServiceAddressInfo {
   try {
     return buildServiceAddressInfo(host, port)
-  } catch {
-    const bindServiceAddress = formatServiceAddress(host, port)
-    const activeLocalServiceAddress = host === "0.0.0.0" ? formatServiceAddress("127.0.0.1", port) : bindServiceAddress
-    return {
-      bindServiceAddress,
-      activeLocalServiceAddress,
-      lanServiceAddresses: [],
-      preferredClientServiceAddress: activeLocalServiceAddress,
-    }
+  } catch (error) {
+    console.warn(`[oauth-multi-login] buildServiceAddressInfo failed: ${errorMessage(error)}`)
+    return buildFallbackServiceAddressInfo(host, port)
   }
 }
 
@@ -717,6 +730,12 @@ const IssueVirtualKeySchema = z.object({
   validityDays: z.number().int().min(1).max(3650).nullable().optional().default(30),
 })
 
+const BulkDeleteAccountsSchema = z.object({
+  ids: z.array(z.string().trim().min(1)).max(500).optional().default([]),
+  accountIds: z.array(z.string().trim().min(1)).max(500).optional().default([]),
+  mode: z.string().trim().optional(),
+})
+
 const RenameVirtualKeySchema = z.object({
   name: z.string().trim().max(120).nullable().optional().default(null),
 })
@@ -987,12 +1006,15 @@ function emitUsageUpdated(input: { accountId: string; keyId?: string; usage: Usa
 }
 
 function emitAccountRateLimitsUpdated(input: { accountId: string; source: string; quota: AccountQuotaSnapshot }) {
+  const derived = resolvePublicAccountDerivedState(input.accountId, input.quota)
   emitServerEvent("account-rate-limits-updated", {
     type: "account-rate-limits-updated",
     at: Date.now(),
     source: input.source,
     accountId: input.accountId,
     quota: input.quota,
+    routing: derived.routing,
+    abnormalState: derived.abnormalState,
   })
 }
 
@@ -1007,15 +1029,327 @@ function toPublicAccountHealth(accountId: string) {
   }
 }
 
+function resolveAccountAbnormalStateLegacy(input: {
+  health: PublicAccountHealthSnapshot | null
+  routing: AccountRoutingState
+  quota?: AccountQuotaSnapshot | null
+}): any {
+  const routingReason = String(input.routing.reason ?? "").trim()
+  if (routingReason === "quota_exhausted_cooldown" || routingReason === "quota_headroom_exhausted") {
+    return {
+      category: "quota_exhausted",
+      label: "已耗尽额度",
+      reason: routingReason,
+      source: "quota",
+      detectedAt: input.quota?.fetchedAt ?? null,
+      expiresAt: null,
+      confidence: "high",
+      deleteEligible: false,
+    }
+  }
+  if (routingReason === "quota_headroom_low") {
+    return {
+      category: "soft_drained",
+      label: "额度低",
+      reason: routingReason,
+      source: "quota",
+      detectedAt: input.quota?.fetchedAt ?? null,
+      expiresAt: null,
+      confidence: "medium",
+      deleteEligible: false,
+    }
+  }
+
+  const health = input.health
+  if (!health) return null
+  const reason = String(health.reason ?? "").trim() || "unknown"
+  if (reason === "account_deactivated" || reason === "workspace_deactivated") {
+    return {
+      category: "banned",
+      label: "已封禁",
+      reason,
+      source: health.source ?? null,
+      detectedAt: health.updatedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "high",
+      deleteEligible: true,
+    }
+  }
+  if (reason === "upstream_banned" || reason === "upstream_forbidden") {
+    return {
+      category: "access_banned",
+      label: "访问被封",
+      reason,
+      source: health.source ?? null,
+      detectedAt: health.updatedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "medium",
+      deleteEligible: true,
+    }
+  }
+  if (reason === "login_required" || reason === "upstream_unauthorized" || reason.startsWith("refresh_")) {
+    return {
+      category: "auth_invalid",
+      label: "需重新登录",
+      reason,
+      source: health.source ?? null,
+      detectedAt: health.updatedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "high",
+      deleteEligible: false,
+    }
+  }
+  if (reason === "upstream_transport_error" || /^upstream_http_\d+$/.test(reason)) {
+    return {
+      category: "transient",
+      label: "暂时异常",
+      reason,
+      source: health.source ?? null,
+      detectedAt: health.updatedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "medium",
+      deleteEligible: false,
+    }
+  }
+  return {
+    category: "unknown",
+    label: "异常",
+    reason,
+    source: health.source ?? null,
+    detectedAt: health.updatedAt ?? null,
+    expiresAt: health.expiresAt,
+    confidence: "medium",
+    deleteEligible: false,
+  }
+}
+
+function buildAccountAbnormalState(input: {
+  classification: AccountAbnormalCategory
+  label: string
+  reason: string
+  source: string | null
+  detectedAt: number | null
+  expiresAt: number | null
+  confidence: "high" | "medium" | "low"
+  deleteEligible: boolean
+}): AccountAbnormalState {
+  return {
+    classification: input.classification,
+    category: input.classification,
+    label: input.label,
+    reason: input.reason,
+    source: input.source,
+    detectedAt: input.detectedAt,
+    expiresAt: input.expiresAt,
+    confidence: input.confidence,
+    deleteEligible: input.deleteEligible,
+  }
+}
+
+function resolveAccountAbnormalState(input: {
+  health: PublicAccountHealthSnapshot | null
+  routing: AccountRoutingState
+  quota?: AccountQuotaSnapshot | null
+}): AccountAbnormalState | null {
+  const routingReason = String(input.routing.reason ?? "").trim()
+  const quota = input.quota ?? null
+  const quotaError = String(quota?.error ?? "").trim()
+  if (routingReason === "quota_exhausted_cooldown" || routingReason === "quota_headroom_exhausted") {
+    return buildAccountAbnormalState({
+      classification: "quota_exhausted",
+      label: "已耗尽额度",
+      reason: routingReason,
+      source: "quota",
+      detectedAt: input.quota?.fetchedAt ?? null,
+      expiresAt: null,
+      confidence: "high",
+      deleteEligible: false,
+    })
+  }
+  if (routingReason === "quota_headroom_low") {
+    return buildAccountAbnormalState({
+      classification: "soft_drained",
+      label: "额度低",
+      reason: routingReason,
+      source: "quota",
+      detectedAt: input.quota?.fetchedAt ?? null,
+      expiresAt: null,
+      confidence: "medium",
+      deleteEligible: false,
+    })
+  }
+  if (routingReason === "pool_consistency_excluded") {
+    return buildAccountAbnormalState({
+      classification: "unknown",
+      label: "暂不参与路由",
+      reason: routingReason,
+      source: "routing",
+      detectedAt: null,
+      expiresAt: null,
+      confidence: "low",
+      deleteEligible: false,
+    })
+  }
+  if (routingReason === "routing_excluded") {
+    return buildAccountAbnormalState({
+      classification: "unknown",
+      label: "当前不可用",
+      reason: routingReason,
+      source: "routing",
+      detectedAt: null,
+      expiresAt: null,
+      confidence: "low",
+      deleteEligible: false,
+    })
+  }
+
+  const health = input.health
+  if (!health) {
+    if (quota?.status === "error") {
+      return buildAccountAbnormalState({
+        classification: "unknown",
+        label: "额度获取失败",
+        reason: quotaError || "quota_fetch_failed",
+        source: "quota",
+        detectedAt: quota?.fetchedAt ?? null,
+        expiresAt: null,
+        confidence: "medium",
+        deleteEligible: false,
+      })
+    }
+    return null
+  }
+
+  const reason = String(health.reason ?? "").trim() || "unknown"
+  if (reason === "account_deactivated" || reason === "workspace_deactivated") {
+    return buildAccountAbnormalState({
+      classification: "banned",
+      label: "已封禁",
+      reason,
+      source: health.source ?? null,
+      detectedAt: health.updatedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "high",
+      deleteEligible: true,
+    })
+  }
+  if (reason === "upstream_banned" || reason === "upstream_forbidden") {
+    return buildAccountAbnormalState({
+      classification: "access_banned",
+      label: "访问被封",
+      reason,
+      source: health.source ?? null,
+      detectedAt: health.updatedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "high",
+      deleteEligible: true,
+    })
+  }
+  if (
+    reason === "login_required" ||
+    reason === "upstream_unauthorized" ||
+    reason === "upstream_auth_error" ||
+    reason.startsWith("refresh_")
+  ) {
+    return buildAccountAbnormalState({
+      classification: "auth_invalid",
+      label: "需重新登录",
+      reason,
+      source: health.source ?? null,
+      detectedAt: health.updatedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "high",
+      deleteEligible: false,
+    })
+  }
+  if ((reason === "account_unhealthy" || reason === "unknown") && quota?.status === "error") {
+    return buildAccountAbnormalState({
+      classification: "unknown",
+      label: "额度获取失败",
+      reason: quotaError || reason,
+      source: "quota",
+      detectedAt: health.updatedAt ?? quota?.fetchedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "medium",
+      deleteEligible: false,
+    })
+  }
+  if (reason === "account_unhealthy") {
+    return buildAccountAbnormalState({
+      classification: "transient",
+      label: "账号异常",
+      reason,
+      source: health.source ?? null,
+      detectedAt: health.updatedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "medium",
+      deleteEligible: false,
+    })
+  }
+  if (reason === "upstream_transport_error" || /^upstream_http_\d+$/.test(reason)) {
+    return buildAccountAbnormalState({
+      classification: "transient",
+      label: "暂时异常",
+      reason,
+      source: health.source ?? null,
+      detectedAt: health.updatedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "medium",
+      deleteEligible: false,
+    })
+  }
+  if (quota?.status === "error") {
+    return buildAccountAbnormalState({
+      classification: "unknown",
+      label: "额度获取失败",
+      reason: quotaError || reason,
+      source: "quota",
+      detectedAt: health.updatedAt ?? quota?.fetchedAt ?? null,
+      expiresAt: health.expiresAt,
+      confidence: "medium",
+      deleteEligible: false,
+    })
+  }
+
+  return buildAccountAbnormalState({
+    classification: "unknown",
+    label: "异常",
+    reason,
+    source: health.source ?? null,
+    detectedAt: health.updatedAt ?? null,
+    expiresAt: health.expiresAt,
+    confidence: "low",
+    deleteEligible: false,
+  })
+}
+
+function resolvePublicAccountDerivedState(accountId: string, quota?: AccountQuotaSnapshot | null) {
+  const health = toPublicAccountHealth(accountId)
+  const routing = resolveAccountRoutingState(accountId, quota)
+  const abnormalState = resolveAccountAbnormalState({
+    health,
+    routing,
+    quota: quota ?? null,
+  })
+  return {
+    health,
+    routing,
+    abnormalState,
+  }
+}
+
 function emitAccountHealthUpdated(input: { accountId: string; source: string }) {
   const normalizedAccountId = normalizeIdentity(input.accountId)
   if (!normalizedAccountId) return
+  const derived = resolvePublicAccountDerivedState(normalizedAccountId, accountQuotaCache.get(normalizedAccountId) ?? null)
   emitServerEvent("account-health-updated", {
     type: "account-health-updated",
     at: Date.now(),
     source: input.source,
     accountId: normalizedAccountId,
-    health: toPublicAccountHealth(normalizedAccountId),
+    health: derived.health,
+    routing: derived.routing,
+    abnormalState: derived.abnormalState,
   })
 }
 
@@ -1031,6 +1365,8 @@ function isStickyAccountHealthReason(reason: string) {
   switch (normalizeAccountHealthReason(reason)) {
     case "account_deactivated":
     case "workspace_deactivated":
+    case "upstream_banned":
+    case "upstream_forbidden":
     case "refresh_unauthorized":
     case "refresh_invalid_grant":
     case "refresh_invalid":
@@ -1643,6 +1979,7 @@ async function refreshAccountQuotaCache(accounts: StoredAccount[], input?: { for
 
 function toPublicAccount(account: StoredAccount, quota?: AccountQuotaSnapshot | null) {
   const metadata = account.metadata ?? {}
+  const derived = resolvePublicAccountDerivedState(account.id, quota)
   return {
     ...account,
     organizationId: normalizeIdentity(String((metadata as Record<string, unknown>).organizationId ?? "")),
@@ -1653,9 +1990,39 @@ function toPublicAccount(account: StoredAccount, quota?: AccountQuotaSnapshot | 
     refreshToken: null,
     hasAccessToken: Boolean(account.accessToken),
     hasRefreshToken: Boolean(account.refreshToken),
-    health: toPublicAccountHealth(account.id),
-    routing: resolveAccountRoutingState(account.id, quota),
+    health: derived.health,
+    routing: derived.routing,
+    abnormalState: derived.abnormalState,
     quota: quota ?? null,
+  }
+}
+
+function deleteAccountsWithSingleRouteKeys(accounts: StoredAccount[]) {
+  const normalizedAccounts = accounts.filter(Boolean)
+  const accountIds = new Set(normalizedAccounts.map((item) => item.id))
+  const singleRouteKeys = accountStore
+    .listVirtualApiKeys()
+    .filter((item) => item.routingMode === "single" && item.accountId && accountIds.has(item.accountId))
+
+  for (const key of singleRouteKeys) {
+    accountStore.deleteVirtualApiKey(key.id)
+  }
+
+  const providerIds = new Set<string>()
+  for (const account of normalizedAccounts) {
+    providerIds.add(account.providerId)
+    accountStore.delete(account.id)
+    accountQuotaCache.delete(account.id)
+    accountHealthCache.delete(account.id)
+    evictAccountModelsCache(account.id)
+  }
+
+  for (const providerId of providerIds) {
+    invalidatePoolConsistency(providerId)
+  }
+
+  return {
+    deletedVirtualKeyCount: singleRouteKeys.length,
   }
 }
 
@@ -4600,6 +4967,42 @@ app.get("/api/accounts/:id/refresh-token", (c) => {
   })
 })
 
+app.post("/api/accounts/bulk-delete", async (c) => {
+  try {
+    const raw = await c.req.json()
+    const input = BulkDeleteAccountsSchema.parse(raw)
+    const uniqueIds = [
+      ...new Set([...input.ids, ...input.accountIds].map((item) => String(item || "").trim()).filter(Boolean)),
+    ]
+    const skipped: Array<{ id: string; reason: string }> = []
+    const deletableAccounts: StoredAccount[] = []
+
+    for (const id of uniqueIds) {
+      const account = accountStore.get(id)
+      if (!account) {
+        skipped.push({ id, reason: "account_not_found" })
+        continue
+      }
+      const derived = resolvePublicAccountDerivedState(account.id, accountQuotaCache.get(account.id) ?? null)
+      if (!derived.abnormalState?.deleteEligible) {
+        skipped.push({ id, reason: derived.abnormalState?.reason || "not_delete_eligible" })
+        continue
+      }
+      deletableAccounts.push(account)
+    }
+
+    const { deletedVirtualKeyCount } = deleteAccountsWithSingleRouteKeys(deletableAccounts)
+    return c.json({
+      requestedCount: uniqueIds.length,
+      deletedAccountCount: deletableAccounts.length,
+      deletedVirtualKeyCount,
+      skipped,
+    })
+  } catch (error) {
+    return c.json({ error: errorMessage(error) }, 400)
+  }
+})
+
 app.post("/api/accounts/api-key", async (c) => {
   try {
     const raw = await c.req.json()
@@ -4981,14 +5384,15 @@ app.post("/api/accounts/:id/refresh", async (c) => {
 app.delete("/api/accounts/:id", (c) => {
   const accountID = c.req.param("id")
   const account = accountStore.get(accountID)
+  if (account) {
+    const { deletedVirtualKeyCount } = deleteAccountsWithSingleRouteKeys([account])
+    return c.json({ success: true, deletedVirtualKeyCount })
+  }
   accountStore.delete(accountID)
   accountQuotaCache.delete(accountID)
   accountHealthCache.delete(accountID)
   evictAccountModelsCache(accountID)
-  if (account) {
-    invalidatePoolConsistency(account.providerId)
-  }
-  return c.json({ success: true })
+  return c.json({ success: true, deletedVirtualKeyCount: 0 })
 })
 
 async function proxyVirtualKeyCodexRequest(c: any, upstreamPath = "/responses") {
