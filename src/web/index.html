@@ -2012,7 +2012,7 @@
       <aside class="sidebar">
         <div class="brand">
           <h1>Codex Gateway</h1>
-          <div class="ver">v1.1.7</div>
+          <div class="ver">v1.1.8</div>
         </div>
         <nav class="nav">
           <button class="nav-btn active" data-view="dashboard"><span>📊</span><span>仪表盘</span></button>
@@ -3532,11 +3532,6 @@
             "x-sensitive-action": "confirm",
           },
         };
-      }
-
-      function isLoopbackHost(hostname) {
-        const value = String(hostname || "").trim().toLowerCase();
-        return value === "localhost" || value === "127.0.0.1" || value === "::1";
       }
 
       function isRemoteAuthContext() {
@@ -6126,82 +6121,6 @@
         }
         input.value = "";
         input.click();
-      }
-
-      async function handleJsonAccountImport(event) {
-        const input = event?.target;
-        const files = Array.from(input?.files || []);
-        if (!files.length) return;
-
-        try {
-          const payload = [];
-          const sourceLabels = [];
-          const localFailures = [];
-
-          for (const file of files) {
-            const text = await file.text();
-            let parsed;
-            try {
-              parsed = JSON.parse(text);
-            } catch {
-              localFailures.push({ source: file.name, error: "JSON 文件格式无效" });
-              continue;
-            }
-
-            if (Array.isArray(parsed)) {
-              parsed.forEach((item, index) => {
-                payload.push(item);
-                sourceLabels.push(`${file.name}#${index + 1}`);
-              });
-            } else {
-              payload.push(parsed);
-              sourceLabels.push(file.name);
-            }
-          }
-
-          if (!payload.length) {
-            const failureSummary = localFailures.map((item) => `${item.source}: ${item.error}`).join("；");
-            const message = localFailures.length > 0 ? `JSON 批量导入失败：${failureSummary}` : "没有可导入的 JSON 账号";
-            throw new Error(message);
-          }
-
-          const output = await api("/api/accounts/import-json", {
-            method: "POST",
-            body: JSON.stringify(payload.length === 1 ? payload[0] : payload),
-          });
-
-          const results = Array.isArray(output?.results) ? output.results : [];
-          for (const result of results) {
-            const index = Number(result?.index);
-            const source = sourceLabels[index] || `entry-${index + 1}`;
-            if (result?.success) {
-              const label = result?.account?.displayName || result?.account?.email || result?.account?.accountId || source;
-              log(`JSON 账号导入成功: ${label} (${source})`);
-              if (result?.virtualKey?.key) {
-                log(`已同步签发虚拟 Key: ${result.virtualKey.record?.name || "Imported Codex Key"} (${source})`);
-              }
-            } else {
-              log(`JSON 账号导入失败: ${source}: ${result?.error || "未知错误"}`, "error");
-            }
-          }
-          for (const failure of localFailures) {
-            log(`JSON 账号导入失败: ${failure.source}: ${failure.error}`, "error");
-          }
-
-          const importedCount = Number(output?.importedCount || 0);
-          const failedCount = Number(output?.failedCount || 0) + localFailures.length;
-          if (importedCount > 0) {
-            await loadAccounts({ refreshQuota: true, forceQuota: true, accountId: output?.account?.id || undefined, loadVirtualKeys: false });
-            await loadVirtualKeys();
-          }
-          showToast(`JSON 导入完成：成功 ${importedCount}，失败 ${failedCount}`, failedCount > 0 ? "info" : "success", 3600);
-        } catch (error) {
-          const msg = toErrorMessage(error);
-          log(`JSON 账号导入失败: ${msg}`, "error");
-          showToast(msg, "error", 3800);
-        } finally {
-          if (input) input.value = "";
-        }
       }
 
       async function addApiKeyAccount() {
