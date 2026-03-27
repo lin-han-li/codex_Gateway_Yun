@@ -517,3 +517,65 @@ const client = new OpenAI({
 ```
 
 That is the main thing customers need.
+
+## 11. Remote Ubuntu authorization options
+
+When the gateway runs on a cloud Ubuntu server, do not assume the server can open a local desktop browser.
+
+Recommended order:
+
+1. `headless`
+   - Start login from the server UI.
+   - Open the returned OpenAI device URL on your local computer or phone.
+   - Enter the user code shown by the gateway.
+   - The server will poll and complete the login without a localhost browser callback.
+2. `manual-code`
+   - Start login from the server UI.
+   - Open the authorization URL on your local browser.
+   - After OpenAI redirects, copy the full callback URL or just the `code` value back into the server UI.
+3. `browser`
+   - Only use this when the browser really runs on the same machine as the gateway.
+   - If you start this from a remote browser, OpenAI usually redirects to that browser machine's `localhost`, not the Ubuntu server.
+
+## 12. Import refresh-token credentials directly
+
+The gateway now supports `POST /api/accounts/import-rt`.
+
+Use this when you already have a `refresh_token` and want the server to create or repair an OAuth account without opening a browser.
+
+Minimal payload:
+
+```json
+{
+  "refresh_token": "YOUR_REFRESH_TOKEN"
+}
+```
+
+Better payload:
+
+```json
+{
+  "refresh_token": "YOUR_REFRESH_TOKEN",
+  "access_token": "OPTIONAL_ACCESS_TOKEN",
+  "account_id": "OPTIONAL_CHATGPT_ACCOUNT_ID",
+  "email": "optional@example.com",
+  "issueVirtualKey": false
+}
+```
+
+Behavior:
+
+- If `access_token` is present, the gateway stores it directly.
+- If `access_token` is missing, the gateway tries to refresh it first by using the supplied `refresh_token`.
+- The route returns `importedCount`, `failedCount`, `refreshedCount`, and per-record results.
+
+## 13. Export accounts from a local desktop and import on Ubuntu
+
+For many teams this is the safest workflow:
+
+1. Log in on a Windows desktop where browser OAuth is easy.
+2. Use the desktop UI button `导出 JSON 账号`, or call `POST /api/accounts/export-json`.
+3. Copy the exported `accounts_YYYYMMDD_HHMMSS.json` file to the Ubuntu server.
+4. In the server UI use `导入 JSON 账号`, or call `POST /api/accounts/import-json`.
+
+`POST /api/accounts/export-json` requires `x-sensitive-action: confirm` because the exported file contains live credentials.

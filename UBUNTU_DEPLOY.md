@@ -359,3 +359,45 @@ http://localhost:1455/auth/callback
 - 浏览器通过 HTTPS 域名能打开管理页
 - 客户端能通过你的反向代理地址访问 `/v1/models` 或 `/v1/responses`
 - 你能在服务端看到数据文件正确写入 `data/`
+
+## 15. 云服务器怎么做 OAuth 登录
+
+如果网关运行在云端 Ubuntu 服务器上，不要默认假设服务器自己能打开图形浏览器。
+
+推荐顺序：
+
+1. `headless`
+   - 最适合云服务器。
+   - 在服务器管理页发起登录。
+   - 在你本地电脑或手机打开设备授权地址，输入页面展示的用户码。
+   - 服务器通过轮询完成登录，不依赖 localhost 浏览器回调。
+2. `manual-code`
+   - 适合作为第二选择。
+   - 在本地浏览器打开授权地址后，把完整回调 URL 或其中的 `code` 粘贴回服务器管理页。
+3. `browser`
+   - 只适合浏览器真的运行在服务器本机的场景。
+
+## 16. 本地登录后导出 JSON，再导入 Ubuntu
+
+对很多运维场景来说，最稳的是：
+
+1. 在 Windows 桌面端或任意有正常浏览器的机器上完成 OAuth 登录。
+2. 用界面的 `导出 JSON 账号`，或者调用 `POST /api/accounts/export-json`。
+3. 把导出的 `accounts_YYYYMMDD_HHMMSS.json` 传到 Ubuntu 服务器。
+4. 在服务器管理页用 `导入 JSON 账号`，或者调用 `POST /api/accounts/import-json`。
+
+这样可以完全绕开云服务器上的浏览器回调问题。
+
+## 17. 直接导入 Refresh Token
+
+现在服务端支持 `POST /api/accounts/import-rt`。
+
+最小示例：
+
+```json
+{
+  "refresh_token": "YOUR_REFRESH_TOKEN"
+}
+```
+
+如果没有 `access_token`，服务器会先尝试用 `refresh_token` 刷新出新的 `access_token` 再落库。这个接口适合你已经拿到了 RT，但不想在 Ubuntu 上再走浏览器授权的场景。

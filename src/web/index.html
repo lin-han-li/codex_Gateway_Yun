@@ -2061,11 +2061,14 @@
             <h2 class="page-title">账号管理</h2>
             <div class="head-actions">
               <button id="btnAddOauth" class="btn primary">🔐 添加 OAuth 账号（本机）</button>
+              <button id="btnImportRt" class="btn">♻️ 导入 RT 授权</button>
               <button id="btnImportJson" class="btn">📥 导入 JSON 账号</button>
+              <button id="btnExportJson" class="btn">📤 导出 JSON 账号</button>
               <button id="btnAddApi" class="btn">🔑 添加 API Key</button>
               <button id="btnBulkDeleteBanned" class="btn danger" disabled>一键清理封禁异常账号</button>
             </div>
           </div>
+          <input id="accountRtImportInput" type="file" accept=".json,application/json" multiple hidden />
           <input id="accountJsonImportInput" type="file" accept=".json,application/json" multiple hidden />
           <div class="query-row">
             <input id="accountQuery" class="query-input" placeholder="查询账号（服务商 / 类型 / 邮箱 / ID / 状态）" />
@@ -3529,6 +3532,50 @@
             "x-sensitive-action": "confirm",
           },
         };
+      }
+
+      function isLoopbackHost(hostname) {
+        const value = String(hostname || "").trim().toLowerCase();
+        return value === "localhost" || value === "127.0.0.1" || value === "::1";
+      }
+
+      function isRemoteAuthContext() {
+        return !isElectronRuntime() && !isLoopbackHost(window.location.hostname);
+      }
+
+      function orderProviderMethods(methods = []) {
+        const preferred = isRemoteAuthContext()
+          ? ["headless", "manual-code", "browser"]
+          : ["browser", "manual-code", "headless"];
+        const order = new Map(preferred.map((id, index) => [id, index]));
+        return [...methods].sort((a, b) => {
+          const rankA = order.has(a?.id) ? order.get(a.id) : 999;
+          const rankB = order.has(b?.id) ? order.get(b.id) : 999;
+          if (rankA !== rankB) return rankA - rankB;
+          return String(a?.label || "").localeCompare(String(b?.label || ""));
+        });
+      }
+
+      function pickQuickStartLoginMethod(methods = []) {
+        return orderProviderMethods(methods)[0] || null;
+      }
+
+      function formatExportFileStamp() {
+        const now = new Date();
+        const pad = (value) => String(value).padStart(2, "0");
+        return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      }
+
+      function downloadJsonFile(filename, payload) {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
       }
 
       function switchView(view) {
@@ -5488,10 +5535,13 @@
           root.innerHTML = `<div class="muted">暂无可用 Provider</div>`;
           return;
         }
+        const hint = isRemoteAuthContext()
+          ? `<div class="muted" style="margin-bottom:10px;">当前看起来是远程服务器访问，推荐优先使用“无头设备流”或“手动授权码”。如果你已在本地桌面登录，也可以先导出 JSON，再导入到云服务器。</div>`
+          : "";
         const cards = [];
         for (const provider of S.providers) {
           const methods = [];
-          for (const method of provider.methods || []) {
+          for (const method of orderProviderMethods(provider.methods || [])) {
             const fields = [];
             for (const field of method.fields || []) {
               const label = field.key === "enterpriseUrl" ? "企业 URL 或域名" : field.label || field.key;
@@ -5522,7 +5572,7 @@
             "</div>",
           );
         }
-        root.innerHTML = cards.join("");
+        root.innerHTML = hint + cards.join("");
 
         root.querySelectorAll("[data-start-login]").forEach((button) => {
           button.onclick = async () => {
@@ -5555,6 +5605,10 @@
             S.sid = session.id;
             drawSession();
             log(`发起授权: ${providerId}/${methodId}`);
+            if (isRemoteAuthContext() && methodId === "browser") {
+              log("当前是远程服务器访问，浏览器回调通常不会回到云服务器，建议改用“无头设备流”或“手动授权码”。", "warn");
+              showToast("远程服务器更推荐“无头设备流”或“手动授权码”", "info", 4200);
+            }
             if (session.authorizationUrl) {
               log(`授权地址已生成: ${session.authorizationUrl.slice(0, 120)}...`);
               if (isElectronRuntime()) {
@@ -6051,17 +6105,10 @@
 
       async function quickStartOauth() {
         switchView("accounts");
-        if (!isElectronRuntime() && !isLoopbackHost(window.location.hostname)) {
-          const message = "当前为网页远程访问，请通过远程桌面在服务机本机执行“添加 OAuth 账号”。";
-          log(message, "error");
-          alert(message);
-          return;
-        }
         const chatgpt = S.providers.find((p) => p.id === "chatgpt");
         const provider = chatgpt || S.providers[0];
         if (!provider) return alert("未发现可用 OAuth Provider");
-        const browserMethod = provider.methods.find((m) => m.id === "browser");
-        const method = browserMethod || provider.methods[0];
+        const method = pickQuickStartLoginMethod(provider.methods || []);
         if (!method) return alert("该 Provider 暂无可用登录方式");
         if (Array.isArray(method.fields) && method.fields.length > 0) {
           log("该登录方式需要额外字段，请先在“可用登录方式”区域填写后再点击开始连接");
@@ -6192,6 +6239,192 @@
         );
       }
 
+      async function collectJsonEntriesFromFiles(files) {
+        const payload = [];
+        const sourceLabels = [];
+        const localFailures = [];
+
+        for (const file of Array.from(files || [])) {
+          const text = await file.text();
+          let parsed;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            localFailures.push({ source: file.name, error: "JSON 文件格式无效" });
+            continue;
+          }
+
+          if (Array.isArray(parsed)) {
+            parsed.forEach((item, index) => {
+              payload.push(item);
+              sourceLabels.push(`${file.name}#${index + 1}`);
+            });
+          } else {
+            payload.push(parsed);
+            sourceLabels.push(file.name);
+          }
+        }
+
+        return { payload, sourceLabels, localFailures };
+      }
+
+      function openRtAccountImport() {
+        switchView("accounts");
+        const input = document.getElementById("accountRtImportInput");
+        if (!input) {
+          alert("未找到 RT 导入控件");
+          return;
+        }
+        input.value = "";
+        input.click();
+      }
+
+      async function handleRtAccountImport(event) {
+        const input = event?.target;
+        const files = Array.from(input?.files || []);
+        if (!files.length) return;
+
+        try {
+          const { payload, sourceLabels, localFailures } = await collectJsonEntriesFromFiles(files);
+          if (!payload.length) {
+            const failureSummary = localFailures.map((item) => `${item.source}: ${item.error}`).join("；");
+            throw new Error(localFailures.length > 0 ? `RT 批量导入失败：${failureSummary}` : "没有可导入的 RT 记录");
+          }
+
+          const output = await api("/api/accounts/import-rt", {
+            method: "POST",
+            body: JSON.stringify(payload.length === 1 ? payload[0] : payload),
+          });
+
+          const results = Array.isArray(output?.results) ? output.results : [];
+          for (const result of results) {
+            const index = Number(result?.index);
+            const source = sourceLabels[index] || `entry-${index + 1}`;
+            if (result?.success) {
+              const label = result?.account?.displayName || result?.account?.email || result?.account?.accountId || source;
+              const refreshState = result?.refreshed ? "（已通过 RT 自动补全 access_token）" : "";
+              log(`RT 账号导入成功: ${label}${refreshState} (${source})`);
+              if (result?.virtualKey?.key) {
+                log(`已同步签发虚拟 Key: ${result.virtualKey.record?.name || "Imported RT Key"} (${source})`);
+              }
+            } else {
+              log(`RT 账号导入失败: ${source}: ${result?.error || "未知错误"}`, "error");
+            }
+          }
+          for (const failure of localFailures) {
+            log(`RT 账号导入失败: ${failure.source}: ${failure.error}`, "error");
+          }
+
+          const importedCount = Number(output?.importedCount || 0);
+          const failedCount = Number(output?.failedCount || 0) + localFailures.length;
+          const refreshedCount = Number(output?.refreshedCount || 0);
+          if (importedCount > 0) {
+            await loadAccounts({ refreshQuota: true, forceQuota: true });
+            await loadVirtualKeys();
+          }
+          showToast(
+            `RT 导入完成：成功 ${importedCount}，失败 ${failedCount}，自动刷新 ${refreshedCount}`,
+            failedCount > 0 ? "info" : "success",
+            4200,
+          );
+        } catch (error) {
+          const msg = toErrorMessage(error);
+          log(`RT 账号导入失败: ${msg}`, "error");
+          showToast(msg, "error", 3800);
+        } finally {
+          if (input) input.value = "";
+        }
+      }
+
+      async function handleJsonAccountImport(event) {
+        const input = event?.target;
+        const files = Array.from(input?.files || []);
+        if (!files.length) return;
+
+        try {
+          const { payload, sourceLabels, localFailures } = await collectJsonEntriesFromFiles(files);
+          if (!payload.length) {
+            const failureSummary = localFailures.map((item) => `${item.source}: ${item.error}`).join("；");
+            throw new Error(localFailures.length > 0 ? `JSON 批量导入失败：${failureSummary}` : "没有可导入的 JSON 账号");
+          }
+
+          const output = await api("/api/accounts/import-json", {
+            method: "POST",
+            body: JSON.stringify(payload.length === 1 ? payload[0] : payload),
+          });
+
+          const results = Array.isArray(output?.results) ? output.results : [];
+          for (const result of results) {
+            const index = Number(result?.index);
+            const source = sourceLabels[index] || `entry-${index + 1}`;
+            if (result?.success) {
+              const label = result?.account?.displayName || result?.account?.email || result?.account?.accountId || source;
+              log(`JSON 账号导入成功: ${label} (${source})`);
+              if (result?.virtualKey?.key) {
+                log(`已同步签发虚拟 Key: ${result.virtualKey.record?.name || "Imported Codex Key"} (${source})`);
+              }
+            } else {
+              log(`JSON 账号导入失败: ${source}: ${result?.error || "未知错误"}`, "error");
+            }
+          }
+          for (const failure of localFailures) {
+            log(`JSON 账号导入失败: ${failure.source}: ${failure.error}`, "error");
+          }
+
+          const importedCount = Number(output?.importedCount || 0);
+          const failedCount = Number(output?.failedCount || 0) + localFailures.length;
+          if (importedCount > 0) {
+            await loadAccounts({ refreshQuota: true, forceQuota: true });
+            await loadVirtualKeys();
+          }
+          showToast(`JSON 导入完成：成功 ${importedCount}，失败 ${failedCount}`, failedCount > 0 ? "info" : "success", 3600);
+        } catch (error) {
+          const msg = toErrorMessage(error);
+          log(`JSON 账号导入失败: ${msg}`, "error");
+          showToast(msg, "error", 3800);
+        } finally {
+          if (input) input.value = "";
+        }
+      }
+
+      async function exportOAuthAccountsJson() {
+        switchView("accounts");
+        const exportableAccounts = (S.accounts || []).filter(
+          (account) => account?.providerId === "chatgpt" && account?.methodId !== "api-key" && account?.hasAccessToken,
+        );
+        if (!exportableAccounts.length) {
+          showToast("当前没有可导出的 OAuth 账号", "info");
+          return;
+        }
+
+        await runBusyAction(
+          "export-json-accounts",
+          async () => {
+            const output = await api(
+              "/api/accounts/export-json",
+              withSensitiveActionHeader({
+                method: "POST",
+                body: JSON.stringify({ ids: exportableAccounts.map((account) => account.id) }),
+              }),
+            );
+            const records = Array.isArray(output?.records) ? output.records : [];
+            if (!records.length) {
+              throw new Error("没有可导出的 OAuth 账号");
+            }
+            const filename = String(output?.filename || `accounts_${formatExportFileStamp()}.json`);
+            downloadJsonFile(filename, records);
+            log(`已导出 ${records.length} 个 OAuth 账号到 ${filename}`);
+            showToast(`已导出 ${records.length} 个账号`, "success");
+          },
+          {
+            button: document.getElementById("btnExportJson"),
+            busyLabel: "导出中...",
+            errorToast: "导出 JSON 失败",
+            rethrow: false,
+          },
+        );
+      }
+
       function bindStatic() {
         const sideFoot = document.querySelector(".side-foot");
         if (sideFoot && !sideFoot.querySelector(".side-foot-actions")) {
@@ -6230,7 +6463,9 @@
         setClick("goAcc", quickStartOauth);
         setClick("goKeys", () => switchView("keys"));
         setClick("btnAddOauth", quickStartOauth);
+        setClick("btnImportRt", openRtAccountImport);
         setClick("btnImportJson", openJsonAccountImport);
+        setClick("btnExportJson", exportOAuthAccountsJson);
         setClick("openDocs", () => window.open("https://github.com/openai/codex", "_blank", "noopener,noreferrer"));
         setClick("btnAddApi", addApiKeyAccount);
         setClick("btnBulkDeleteBanned", bulkDeleteBannedAccounts);
@@ -6345,6 +6580,7 @@
             submitKeyManageRenew();
           }
         });
+        document.getElementById("accountRtImportInput")?.addEventListener("change", handleRtAccountImport);
         document.getElementById("accountJsonImportInput")?.addEventListener("change", handleJsonAccountImport);
         ensureEarlyAuthFormBinding();
 

@@ -736,6 +736,10 @@ const BulkDeleteAccountsSchema = z.object({
   mode: z.string().trim().optional(),
 })
 
+const ExportAccountsSchema = z.object({
+  ids: z.array(z.string().trim().min(1)).max(500).optional().default([]),
+})
+
 const RenameVirtualKeySchema = z.object({
   name: z.string().trim().max(120).nullable().optional().default(null),
 })
@@ -819,6 +823,50 @@ const ImportJsonAccountSchema = z
         code: z.ZodIssueCode.custom,
         message: "access_token is required",
         path: ["access_token"],
+      })
+    }
+  })
+
+const ImportRtAccountSchema = z
+  .object({
+    providerId: z.literal("chatgpt").optional().default("chatgpt"),
+    providerName: z.string().trim().min(1).max(80).optional().default("ChatGPT"),
+    methodId: z.string().trim().min(1).max(80).optional().default("refresh-token-import"),
+    displayName: ImportJsonOptionalString(z.string().max(160)),
+    email: ImportJsonOptionalString(z.string().email()),
+    access_token: ImportJsonOptionalString(z.string().min(1)),
+    accessToken: ImportJsonOptionalString(z.string().min(1)),
+    refresh_token: ImportJsonOptionalString(z.string().min(1)),
+    refreshToken: ImportJsonOptionalString(z.string().min(1)),
+    id_token: ImportJsonOptionalString(z.string().min(1)),
+    idToken: ImportJsonOptionalString(z.string().min(1)),
+    account_id: ImportJsonOptionalString(z.string().max(200)),
+    accountId: ImportJsonOptionalString(z.string().max(200)),
+    workspace_id: ImportJsonOptionalString(z.string().max(200)),
+    workspaceId: ImportJsonOptionalString(z.string().max(200)),
+    organization_id: ImportJsonOptionalString(z.string().max(200)),
+    organizationId: ImportJsonOptionalString(z.string().max(200)),
+    project_id: ImportJsonOptionalString(z.string().max(200)),
+    projectId: ImportJsonOptionalString(z.string().max(200)),
+    chatgpt_plan_type: ImportJsonOptionalString(z.string().max(120)),
+    chatgptPlanType: ImportJsonOptionalString(z.string().max(120)),
+    chatgpt_user_id: ImportJsonOptionalString(z.string().max(200)),
+    chatgptUserId: ImportJsonOptionalString(z.string().max(200)),
+    completed_platform_onboarding: z.boolean().optional(),
+    completedPlatformOnboarding: z.boolean().optional(),
+    is_org_owner: z.boolean().optional(),
+    isOrgOwner: z.boolean().optional(),
+    expires_at: z.preprocess(preprocessImportedJsonDateValue, z.union([z.string(), z.number()]).optional()),
+    expiresAt: z.preprocess(preprocessImportedJsonDateValue, z.union([z.string(), z.number()]).optional()),
+    issueVirtualKey: z.boolean().optional().default(false),
+    keyName: ImportJsonOptionalString(z.string().max(120)),
+  })
+  .superRefine((value, ctx) => {
+    if (!String(value.refresh_token ?? value.refreshToken ?? "").trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "refresh_token is required",
+        path: ["refresh_token"],
       })
     }
   })
@@ -2078,6 +2126,122 @@ function buildOAuthIdentity(input: { email?: string; accountId?: string }) {
   return email || accountId || crypto.randomUUID()
 }
 
+function resolvePortableOAuthTokenProfile(input: {
+  accessToken?: string | null
+  idToken?: string | null
+  email?: string | null
+  accountId?: string | null
+  fallbackAccountIds?: Array<string | null | undefined>
+  organizationId?: string | null
+  projectId?: string | null
+  chatgptPlanType?: string | null
+  chatgptUserId?: string | null
+  completedPlatformOnboarding?: boolean
+  isOrgOwner?: boolean
+}) {
+  const accessToken = normalizeIdentity(input.accessToken)
+  const idToken = normalizeIdentity(input.idToken)
+  const accessPayload = parseJwtPayload(accessToken)
+  const idPayload = parseJwtPayload(idToken)
+  const accessAuth = parseJwtAuthClaims(accessToken)
+  const idAuth = parseJwtAuthClaims(idToken)
+  const accessProfile = asObjectRecord(accessPayload?.["https://api.openai.com/profile"])
+  const idProfile = asObjectRecord(idPayload?.["https://api.openai.com/profile"])
+  const fallbackAccountId =
+    (input.fallbackAccountIds ?? [])
+      .map((value) => normalizeIdentity(value))
+      .find((value) => Boolean(value)) ?? undefined
+
+  const resolvedEmail =
+    normalizeIdentity(String(accessProfile?.email ?? "")) ||
+    normalizeIdentity(String(idPayload?.email ?? "")) ||
+    normalizeIdentity(String(idProfile?.email ?? "")) ||
+    normalizeIdentity(input.email)
+  const resolvedAccountId =
+    normalizeIdentity(input.accountId) ||
+    normalizeIdentity(accessAuth?.chatgpt_account_id) ||
+    normalizeIdentity(idAuth?.chatgpt_account_id) ||
+    fallbackAccountId
+  const resolvedChatgptPlanType =
+    normalizeIdentity(accessAuth?.chatgpt_plan_type) ||
+    normalizeIdentity(idAuth?.chatgpt_plan_type) ||
+    normalizeIdentity(input.chatgptPlanType)
+  const resolvedChatgptUserId =
+    normalizeIdentity(accessAuth?.chatgpt_user_id) ||
+    normalizeIdentity(accessAuth?.user_id) ||
+    normalizeIdentity(idAuth?.chatgpt_user_id) ||
+    normalizeIdentity(idAuth?.user_id) ||
+    normalizeIdentity(input.chatgptUserId)
+  const resolvedOrganizationId =
+    normalizeIdentity(accessAuth?.organization_id) ||
+    normalizeIdentity(idAuth?.organization_id) ||
+    resolveDefaultOrganizationIdFromAuthRecord(idPayload?.["https://api.openai.com/auth"]) ||
+    resolveDefaultOrganizationIdFromAuthRecord(accessPayload?.["https://api.openai.com/auth"]) ||
+    normalizeIdentity(input.organizationId)
+  const resolvedProjectId =
+    normalizeIdentity(accessAuth?.project_id) ||
+    normalizeIdentity(idAuth?.project_id) ||
+    normalizeIdentity(input.projectId)
+  const resolvedCompletedPlatformOnboarding =
+    typeof accessAuth?.completed_platform_onboarding === "boolean"
+      ? accessAuth.completed_platform_onboarding
+      : typeof idAuth?.completed_platform_onboarding === "boolean"
+        ? idAuth.completed_platform_onboarding
+        : typeof input.completedPlatformOnboarding === "boolean"
+          ? input.completedPlatformOnboarding
+          : undefined
+  const resolvedIsOrgOwner =
+    typeof accessAuth?.is_org_owner === "boolean"
+      ? accessAuth.is_org_owner
+      : typeof idAuth?.is_org_owner === "boolean"
+        ? idAuth.is_org_owner
+        : typeof input.isOrgOwner === "boolean"
+          ? input.isOrgOwner
+          : undefined
+  const expiresAt = toEpochMs(asFiniteNumber(accessPayload?.exp)) ?? toEpochMs(asFiniteNumber(idPayload?.exp))
+
+  return {
+    accessToken,
+    idToken,
+    email: resolvedEmail,
+    accountId: resolvedAccountId,
+    organizationId: resolvedOrganizationId,
+    projectId: resolvedProjectId,
+    chatgptPlanType: resolvedChatgptPlanType,
+    chatgptUserId: resolvedChatgptUserId,
+    completedPlatformOnboarding: resolvedCompletedPlatformOnboarding,
+    isOrgOwner: resolvedIsOrgOwner,
+    expiresAt: expiresAt ?? undefined,
+  }
+}
+
+function exportStoredOAuthAccount(account: StoredAccount) {
+  const metadata = asObjectRecord(account.metadata) ?? {}
+  const completedPlatformOnboarding = metadata.completedPlatformOnboarding
+  const isOrgOwner = metadata.isOrgOwner
+  return {
+    type: "oauth",
+    provider_id: account.providerId,
+    provider_name: account.providerName,
+    method_id: account.methodId,
+    display_name: account.displayName,
+    email: account.email ?? undefined,
+    account_id: account.accountId ?? undefined,
+    access_token: account.accessToken || undefined,
+    refresh_token: account.refreshToken ?? undefined,
+    expires_at: account.expiresAt ?? undefined,
+    organization_id: normalizeIdentity(String(metadata.organizationId ?? "")) || undefined,
+    project_id: normalizeIdentity(String(metadata.projectId ?? "")) || undefined,
+    chatgpt_plan_type: normalizeIdentity(String(metadata.chatgptPlanType ?? "")) || undefined,
+    chatgpt_user_id: normalizeIdentity(String(metadata.chatgptUserId ?? "")) || undefined,
+    completed_platform_onboarding:
+      typeof completedPlatformOnboarding === "boolean" ? completedPlatformOnboarding : undefined,
+    is_org_owner: typeof isOrgOwner === "boolean" ? isOrgOwner : undefined,
+    exported_at: new Date().toISOString(),
+    source: "codex-gateway-export",
+  }
+}
+
 function resolveImportedJsonOAuthAccount(input: z.infer<typeof ImportJsonAccountSchema>) {
   const accessToken = String(input.access_token ?? input.accessToken ?? "").trim()
   const refreshToken = normalizeIdentity(String(input.refresh_token ?? input.refreshToken ?? ""))
@@ -2093,54 +2257,15 @@ function resolveImportedJsonOAuthAccount(input: z.infer<typeof ImportJsonAccount
   const importedStatus = normalizeImportedJsonString(input.status)
   const importedExpiresAt = parseImportedJsonExpiresAt(input.expires_at ?? input.expiresAt)
 
-  const accessPayload = parseJwtPayload(accessToken)
-  const idPayload = parseJwtPayload(idToken)
-  const accessAuth = parseJwtAuthClaims(accessToken)
-  const idAuth = parseJwtAuthClaims(idToken)
-  const accessProfile = asObjectRecord(accessPayload?.["https://api.openai.com/profile"])
-  const idProfile = asObjectRecord(idPayload?.["https://api.openai.com/profile"])
+  const resolvedTokens = resolvePortableOAuthTokenProfile({
+    accessToken,
+    idToken,
+    email: input.email,
+    fallbackAccountIds: [importedAccountId, importedWorkspaceId],
+  })
+  const expiresAt = resolvedTokens.expiresAt ?? importedExpiresAt
 
-  const resolvedEmail =
-    normalizeIdentity(String(accessProfile?.email ?? "")) ||
-    normalizeIdentity(String(idPayload?.email ?? "")) ||
-    normalizeIdentity(String(idProfile?.email ?? "")) ||
-    normalizeIdentity(input.email)
-  const resolvedAccountId =
-    normalizeIdentity(accessAuth?.chatgpt_account_id) ||
-    normalizeIdentity(idAuth?.chatgpt_account_id) ||
-    importedAccountId ||
-    importedWorkspaceId
-  const resolvedChatgptPlanType =
-    normalizeIdentity(accessAuth?.chatgpt_plan_type) || normalizeIdentity(idAuth?.chatgpt_plan_type)
-  const resolvedChatgptUserId =
-    normalizeIdentity(accessAuth?.chatgpt_user_id) ||
-    normalizeIdentity(accessAuth?.user_id) ||
-    normalizeIdentity(idAuth?.chatgpt_user_id) ||
-    normalizeIdentity(idAuth?.user_id)
-  const resolvedOrganizationId =
-    normalizeIdentity(accessAuth?.organization_id) ||
-    normalizeIdentity(idAuth?.organization_id) ||
-    resolveDefaultOrganizationIdFromAuthRecord(idPayload?.["https://api.openai.com/auth"]) ||
-    resolveDefaultOrganizationIdFromAuthRecord(accessPayload?.["https://api.openai.com/auth"])
-  const resolvedProjectId = normalizeIdentity(accessAuth?.project_id) || normalizeIdentity(idAuth?.project_id)
-  const resolvedCompletedPlatformOnboarding =
-    typeof accessAuth?.completed_platform_onboarding === "boolean"
-      ? accessAuth.completed_platform_onboarding
-      : typeof idAuth?.completed_platform_onboarding === "boolean"
-        ? idAuth.completed_platform_onboarding
-        : undefined
-  const resolvedIsOrgOwner =
-    typeof accessAuth?.is_org_owner === "boolean"
-      ? accessAuth.is_org_owner
-      : typeof idAuth?.is_org_owner === "boolean"
-        ? idAuth.is_org_owner
-        : undefined
-  const expiresAt =
-    toEpochMs(asFiniteNumber(accessPayload?.exp)) ??
-    toEpochMs(asFiniteNumber(idPayload?.exp)) ??
-    importedExpiresAt
-
-  if (!resolvedEmail && !resolvedAccountId) {
+  if (!resolvedTokens.email && !resolvedTokens.accountId) {
     throw new Error("Imported JSON does not contain a usable email or chatgpt_account_id")
   }
 
@@ -2149,8 +2274,8 @@ function resolveImportedJsonOAuthAccount(input: z.infer<typeof ImportJsonAccount
     lastRefresh,
     accessToken,
     refreshToken: refreshToken ?? undefined,
-    email: resolvedEmail,
-    accountId: resolvedAccountId,
+    email: resolvedTokens.email,
+    accountId: resolvedTokens.accountId,
     expiresAt: expiresAt ?? undefined,
     metadata: {
       source: "codex-json-import",
@@ -2163,12 +2288,12 @@ function resolveImportedJsonOAuthAccount(input: z.infer<typeof ImportJsonAccount
       importedRegisteredAt,
       importedStatus,
       importedSessionTokenPresent: Boolean(importedSessionToken),
-      organizationId: resolvedOrganizationId,
-      projectId: resolvedProjectId,
-      chatgptPlanType: resolvedChatgptPlanType,
-      chatgptUserId: resolvedChatgptUserId,
-      completedPlatformOnboarding: resolvedCompletedPlatformOnboarding,
-      isOrgOwner: resolvedIsOrgOwner,
+      organizationId: resolvedTokens.organizationId,
+      projectId: resolvedTokens.projectId,
+      chatgptPlanType: resolvedTokens.chatgptPlanType,
+      chatgptUserId: resolvedTokens.chatgptUserId,
+      completedPlatformOnboarding: resolvedTokens.completedPlatformOnboarding,
+      isOrgOwner: resolvedTokens.isOrgOwner,
     },
   }
 }
@@ -2216,6 +2341,168 @@ function importJsonOAuthAccount(input: z.infer<typeof ImportJsonAccountSchema>) 
     accountId: accountID,
     account: account ? toPublicAccount(account, accountQuotaCache.get(accountID) ?? null) : null,
     virtualKey,
+  }
+}
+
+async function importRefreshTokenOAuthAccount(input: z.infer<typeof ImportRtAccountSchema>) {
+  const refreshToken = normalizeIdentity(String(input.refresh_token ?? input.refreshToken ?? ""))
+  if (!refreshToken) {
+    throw new Error("refresh_token is required")
+  }
+
+  const importedAccountId = normalizeImportedJsonString(input.account_id ?? input.accountId)
+  const importedWorkspaceId = normalizeImportedJsonString(input.workspace_id ?? input.workspaceId)
+  const accessTokenCandidate = normalizeIdentity(String(input.access_token ?? input.accessToken ?? ""))
+  const idToken = normalizeIdentity(String(input.id_token ?? input.idToken ?? ""))
+  const providedExpiresAt = parseImportedJsonExpiresAt(input.expires_at ?? input.expiresAt)
+  const completedPlatformOnboarding =
+    typeof input.completedPlatformOnboarding === "boolean"
+      ? input.completedPlatformOnboarding
+      : typeof input.completed_platform_onboarding === "boolean"
+        ? input.completed_platform_onboarding
+        : undefined
+  const isOrgOwner =
+    typeof input.isOrgOwner === "boolean"
+      ? input.isOrgOwner
+      : typeof input.is_org_owner === "boolean"
+        ? input.is_org_owner
+        : undefined
+
+  const initialResolved = resolvePortableOAuthTokenProfile({
+    accessToken: accessTokenCandidate,
+    idToken,
+    email: input.email,
+    accountId: importedAccountId,
+    fallbackAccountIds: [importedWorkspaceId],
+    organizationId: normalizeImportedJsonString(input.organization_id ?? input.organizationId),
+    projectId: normalizeImportedJsonString(input.project_id ?? input.projectId),
+    chatgptPlanType: normalizeImportedJsonString(input.chatgpt_plan_type ?? input.chatgptPlanType),
+    chatgptUserId: normalizeImportedJsonString(input.chatgpt_user_id ?? input.chatgptUserId),
+    completedPlatformOnboarding,
+    isOrgOwner,
+  })
+
+  let accessToken = initialResolved.accessToken
+  let finalRefreshToken = refreshToken
+  let finalExpiresAt = initialResolved.expiresAt ?? providedExpiresAt ?? undefined
+  let finalResolved = initialResolved
+  let refreshed = false
+
+  if (!accessToken) {
+    const provider = providers.getProvider(input.providerId)
+    if (!provider?.refresh) {
+      throw new Error(`Provider ${input.providerId} does not support refresh-token import`)
+    }
+
+    const refreshStub: StoredAccount = {
+      id: crypto.randomUUID(),
+      providerId: input.providerId,
+      providerName: input.providerName,
+      methodId: input.methodId,
+      displayName: normalizeIdentity(input.displayName) || initialResolved.email || initialResolved.accountId || "RT Import",
+      accountKey: buildOAuthIdentity({
+        email: initialResolved.email,
+        accountId: initialResolved.accountId,
+      }),
+      email: initialResolved.email ?? null,
+      accountId: initialResolved.accountId ?? null,
+      enterpriseUrl: null,
+      accessToken: "",
+      refreshToken,
+      expiresAt: finalExpiresAt ?? null,
+      isActive: false,
+      metadata: {},
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }
+    const refreshResult = await provider.refresh(refreshStub)
+    if (!refreshResult?.accessToken) {
+      throw new Error("Refresh token import failed: provider did not return an access token")
+    }
+    refreshed = true
+    accessToken = refreshResult.accessToken
+    finalRefreshToken = refreshResult.refreshToken ?? refreshToken
+    finalExpiresAt = refreshResult.expiresAt ?? finalExpiresAt
+    finalResolved = resolvePortableOAuthTokenProfile({
+      accessToken,
+      idToken,
+      email: initialResolved.email ?? input.email,
+      accountId: refreshResult.accountId ?? initialResolved.accountId ?? importedAccountId,
+      fallbackAccountIds: [importedWorkspaceId],
+      organizationId: initialResolved.organizationId,
+      projectId: initialResolved.projectId,
+      chatgptPlanType: initialResolved.chatgptPlanType,
+      chatgptUserId: initialResolved.chatgptUserId,
+      completedPlatformOnboarding: initialResolved.completedPlatformOnboarding,
+      isOrgOwner: initialResolved.isOrgOwner,
+    })
+  }
+
+  if (!accessToken) {
+    throw new Error("Refresh token import requires a usable access token")
+  }
+  if (!finalResolved.email && !finalResolved.accountId) {
+    throw new Error("Imported refresh token does not contain a usable email or chatgpt_account_id")
+  }
+
+  ensureForcedWorkspaceAllowed(finalResolved.accountId)
+  const identity = buildOAuthIdentity({
+    email: finalResolved.email,
+    accountId: finalResolved.accountId,
+  })
+  const displayName =
+    normalizeIdentity(input.displayName) || finalResolved.email || finalResolved.accountId || "Imported Refresh Token Account"
+  const accountID = accountStore.saveBridgeOAuth({
+    providerId: input.providerId,
+    providerName: input.providerName,
+    methodId: input.methodId,
+    displayName,
+    accountKey: identity,
+    email: finalResolved.email,
+    accountId: finalResolved.accountId,
+    accessToken,
+    refreshToken: finalRefreshToken,
+    expiresAt: finalExpiresAt,
+    metadata: {
+      source: "codex-refresh-token-import",
+      importMode: accessTokenCandidate ? "refresh-token-with-access-token" : "refresh-token-refresh-first",
+      importedAccountId,
+      importedWorkspaceId,
+      idTokenPresent: Boolean(idToken),
+      organizationId: finalResolved.organizationId,
+      projectId: finalResolved.projectId,
+      chatgptPlanType: finalResolved.chatgptPlanType,
+      chatgptUserId: finalResolved.chatgptUserId,
+      completedPlatformOnboarding: finalResolved.completedPlatformOnboarding,
+      isOrgOwner: finalResolved.isOrgOwner,
+    },
+  })
+  markAccountHealthy(accountID, refreshed ? "refresh-token-import-refresh" : "refresh-token-import")
+  invalidatePoolConsistency(input.providerId)
+  void refreshAndEmitAccountQuota(accountID, "refresh-token-import")
+  const account = accountStore.get(accountID)
+  let virtualKey: { key: string; record: unknown } | undefined
+  if (input.issueVirtualKey) {
+    const issued = accountStore.createVirtualApiKey({
+      accountId: accountID,
+      providerId: input.providerId,
+      routingMode: "single",
+      name: input.keyName || "Imported RT Key",
+    })
+    virtualKey = {
+      key: issued.key,
+      record: issued.record,
+    }
+  }
+
+  return {
+    accountId: accountID,
+    account: account ? toPublicAccount(account, accountQuotaCache.get(accountID) ?? null) : null,
+    virtualKey,
+    refreshed,
   }
 }
 
@@ -5101,6 +5388,36 @@ app.post("/api/accounts/api-key", async (c) => {
   }
 })
 
+app.post("/api/accounts/export-json", async (c) => {
+  if (!hasSensitiveActionConfirmation(c)) {
+    return c.json({ error: "Sensitive action confirmation required" }, 400)
+  }
+  try {
+    const raw = await c.req.json().catch(() => ({}))
+    const input = ExportAccountsSchema.parse(raw)
+    const selectedIds = new Set((input.ids ?? []).map((item) => String(item).trim()).filter(Boolean))
+    const accounts = accountStore
+      .list()
+      .filter((account) => account.providerId === "chatgpt" && account.methodId !== "api-key" && Boolean(account.accessToken))
+      .filter((account) => selectedIds.size === 0 || selectedIds.has(account.id))
+
+    const records = accounts.map((account) => exportStoredOAuthAccount(account))
+    const stamp = new Date()
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace(/\..+$/, "")
+      .replace("T", "_")
+
+    return c.json({
+      exportedCount: records.length,
+      records,
+      filename: `accounts_${stamp}.json`,
+    })
+  } catch (error) {
+    return c.json({ error: errorMessage(error) }, 400)
+  }
+})
+
 app.post("/api/accounts/import-json", async (c) => {
   try {
     const raw = await c.req.json()
@@ -5274,6 +5591,64 @@ app.delete("/api/virtual-keys/:id", (c) => {
   try {
     accountStore.deleteVirtualApiKey(c.req.param("id"))
     return c.json({ success: true })
+  } catch (error) {
+    return c.json({ error: errorMessage(error) }, 400)
+  }
+})
+
+app.post("/api/accounts/import-rt", async (c) => {
+  try {
+    const raw = await c.req.json()
+    const entries = Array.isArray(raw) ? raw : [raw]
+    if (entries.length === 0) {
+      return c.json({ error: "At least one refresh-token account record is required" }, 400)
+    }
+    if (entries.length > 500) {
+      return c.json({ error: "Too many refresh-token account records (max 500)" }, 400)
+    }
+
+    const results: Array<{
+      index: number
+      success: boolean
+      account?: ReturnType<typeof toPublicAccount> | null
+      virtualKey?: { key: string; record: unknown }
+      refreshed?: boolean
+      error?: string
+    }> = []
+
+    let importedCount = 0
+    let failedCount = 0
+    let refreshedCount = 0
+
+    for (const [index, entry] of entries.entries()) {
+      try {
+        const parsed = ImportRtAccountSchema.parse(entry)
+        const imported = await importRefreshTokenOAuthAccount(parsed)
+        importedCount += 1
+        if (imported.refreshed) refreshedCount += 1
+        results.push({
+          index,
+          success: true,
+          account: imported.account,
+          virtualKey: imported.virtualKey,
+          refreshed: imported.refreshed,
+        })
+      } catch (error) {
+        failedCount += 1
+        results.push({
+          index,
+          success: false,
+          error: errorMessage(error),
+        })
+      }
+    }
+
+    return c.json({
+      importedCount,
+      failedCount,
+      refreshedCount,
+      results,
+    })
   } catch (error) {
     return c.json({ error: errorMessage(error) }, 400)
   }
